@@ -25,15 +25,15 @@ public class BrokerMessageController {
         String body = getBody(input);
         try {
             ConnectorAvailableMessage connectorAvailableMessage =  Json.decodeValue(header, ConnectorAvailableMessage.class);
-            register(Json.decodeValue(body, Connector.class));
+            register(new JsonObject(body));
         } catch (DecodeException exception) {
             try {
                 ConnectorUnavailableMessage connectorUnavailableMessage =  Json.decodeValue(header, ConnectorUnavailableMessage.class);
-                unregister(Json.decodeValue(body, Connector.class));
+                unregister(new JsonObject(body));
             } catch (DecodeException exception2) {
                 try {
                     ConnectorUpdateMessage connectorUpdateMessage =  Json.decodeValue(header, ConnectorUpdateMessage.class);
-                    update(Json.decodeValue(body, Connector.class));
+                    update(new JsonObject(body));
                 }
                 catch (DecodeException exception3){
 
@@ -42,17 +42,21 @@ public class BrokerMessageController {
         }
     }
 
-    private void update(Connector body) {
-        JsonObject jsonObject = (JsonObject) body;
-        brokerMessageService.sendBody(jsonObject);
+    private void update(JsonObject body) {
+        String id = "catalog-1";
+        brokerMessageService.sendBody(body,id);
         System.out.println("Hier ist update");
     }
 
-    private void register(Connector body) {
+    private void register(JsonObject body) {
+        String id = "catalog-1";
+        brokerMessageService.sendBody(body,id);
         System.out.println("Hier ist register");
     }
 
-    private void unregister(Connector body) {
+    private void unregister(JsonObject body) {
+        String id = "catalog-1";
+        brokerMessageService.sendBody(body,id);
         System.out.println("Hier ist unregister");
     }
 

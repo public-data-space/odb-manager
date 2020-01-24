@@ -24,12 +24,12 @@ public class BrokerMessageServiceImpl implements BrokerMessageService{
         readyHandler.handle(Future.succeededFuture(this));
     }
 
-    private void post(int port, String host, String path, JsonObject payload, Handler<AsyncResult<JsonObject>> resultHandler) {
+    private void post(int port, String host, String path, JsonObject payload, Handler<AsyncResult<String>> resultHandler) {
         webClient
-                .post(port, host, path)
+                .put(port, host, path)
                 .sendJsonObject(payload, ar -> {
                     if (ar.succeeded()) {
-                        resultHandler.handle(Future.succeededFuture(ar.result().bodyAsJsonObject()));
+                        resultHandler.handle(Future.succeededFuture(ar.result().bodyAsString()));
                     } else {
                         LOGGER.error(ar.cause());
                         resultHandler.handle(Future.failedFuture(ar.cause()));
@@ -37,16 +37,16 @@ public class BrokerMessageServiceImpl implements BrokerMessageService{
                 });
     }
 
-
     @Override
-    public BrokerMessageService sendBody(JsonObject body) {
-        post(piveauPort,piveauHost,"",body,jsonObjectAsyncResult -> {
+    public BrokerMessageService sendBody(JsonObject body, String id) {
+        post(piveauPort,piveauHost,"/catalogues/"+id,body,jsonObjectAsyncResult -> {
             if (jsonObjectAsyncResult.succeeded()) {
-
+                System.out.println("Succeeded");
 
             }
             else {
-
+                LOGGER.error(jsonObjectAsyncResult.cause());
+                System.out.println("Error ");
 
             }
 

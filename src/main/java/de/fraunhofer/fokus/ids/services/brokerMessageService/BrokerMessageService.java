@@ -15,7 +15,7 @@ import io.vertx.ext.web.client.WebClient;
 public interface BrokerMessageService {
 
     @Fluent
-    BrokerMessageService sendBody(JsonObject body);
+    BrokerMessageService sendBody(JsonObject body, String id);
 
     @GenIgnore
     static BrokerMessageService create(Vertx vertx, WebClient webClient, int gatewayPort, String gatewayHost, Handler<AsyncResult<BrokerMessageService>> readyHandler) {
