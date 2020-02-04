@@ -20,6 +20,11 @@ public interface BrokerMessageService {
     @Fluent
     BrokerMessageService createDataSet(JsonObject body, String id, String catalogue, Handler<AsyncResult<BrokerMessageService>> readyHandler);
 
+    @Fluent
+    BrokerMessageService deleteDataSet(String id, String catalogue, Handler<AsyncResult<BrokerMessageService>> readyHandler);
+
+    @Fluent
+    BrokerMessageService deleteCatalogue(String id, Handler<AsyncResult<BrokerMessageService>> readyHandler);
     @GenIgnore
     static BrokerMessageService create(Vertx vertx, WebClient webClient, int gatewayPort, String gatewayHost, Handler<AsyncResult<BrokerMessageService>> readyHandler) {
         return new BrokerMessageServiceImpl(vertx, webClient, gatewayPort, gatewayHost, readyHandler);

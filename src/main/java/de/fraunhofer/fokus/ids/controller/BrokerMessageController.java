@@ -3,6 +3,9 @@ package de.fraunhofer.fokus.ids.controller;
 import de.fraunhofer.fokus.ids.services.brokerMessageService.BrokerMessageService;
 import de.fraunhofer.fokus.ids.utils.IDSMessageParser;
 import de.fraunhofer.iais.eis.*;
+import io.vertx.core.AsyncResult;
+import io.vertx.core.Future;
+import io.vertx.core.Handler;
 import io.vertx.core.Vertx;
 import io.vertx.core.json.Json;
 import io.vertx.core.json.JsonObject;
@@ -19,16 +22,16 @@ public class BrokerMessageController {
         this.brokerMessageService = BrokerMessageService.createProxy(vertx,"brokerMessageService");
     }
 
-    public void getData (String input){
+    public void getData (String input, Handler<AsyncResult<Void>> readyHandler){
         ConnectorNotificationMessage header = IDSMessageParser.getHeader(input);
         Connector connector = IDSMessageParser.getBody(input);
         try {
             if (header instanceof ConnectorAvailableMessage) {
-                register(connector);
+                register(connector, readyHandler);
             } else if (header instanceof ConnectorUnavailableMessage) {
-                unregister(connector);
+                unregister(connector, readyHandler);
             } else if (header instanceof ConnectorUpdateMessage) {
-                update(connector);
+                update(connector, readyHandler);
             } else {
                 LOGGER.error("Invalid message signature.");
             }
@@ -38,34 +41,53 @@ public class BrokerMessageController {
         }
     }
 
-    private void update(Connector connector) {
-        System.out.println("Hier ist update");
-    }
-
-    private void register(Connector connector) {
-        String catalogueid = UUID.randomUUID().toString();
-        brokerMessageService.createCatalogue(toJson(connector),catalogueid, catalogueReply -> {
+    private void update(Connector connector, Handler<AsyncResult<Void>> readyHandler) {
+        String datasetId = ""; //Get ID of dataset from somwhere
+        String catalogueId = ""; //Get ID of catalogue from somwhere
+        brokerMessageService.createCatalogue(toJson(connector),catalogueId, catalogueReply -> {
             if(catalogueReply.succeeded()){
-                String datasetid = UUID.randomUUID().toString();
-                brokerMessageService.createDataSet(toJson(connector), datasetid, catalogueid, datasetReply -> {
-                    if(datasetReply.succeeded()){
-                        LOGGER.info("success");
-                    } else {
-                        LOGGER.error(datasetReply.cause());
-                    }
-                });
+                brokerMessageService.createDataSet(toJson(connector), datasetId, catalogueId, datasetReply -> handleReply(datasetReply, readyHandler));
             } else {
                 LOGGER.error(catalogueReply.cause());
+                readyHandler.handle(Future.failedFuture(catalogueReply.cause()));
             }
         });
     }
 
-    private void unregister(Connector connector) {
-        String id = UUID.randomUUID().toString();
-    //    brokerMessageService.sendBody(toJson(connector),id);
-        System.out.println("Hier ist unregister");
+    private void register(Connector connector, Handler<AsyncResult<Void>> readyHandler) {
+        String catalogueid = UUID.randomUUID().toString();
+        brokerMessageService.createCatalogue(toJson(connector),catalogueid, catalogueReply -> {
+            if(catalogueReply.succeeded()){
+                String datasetid = UUID.randomUUID().toString();
+                brokerMessageService.createDataSet(toJson(connector), datasetid, catalogueid, datasetReply -> handleReply(datasetReply, readyHandler));
+            } else {
+                LOGGER.error(catalogueReply.cause());
+                readyHandler.handle(Future.failedFuture(catalogueReply.cause()));
+            }
+        });
     }
 
+    private void unregister(Connector connector, Handler<AsyncResult<Void>> readyHandler) {
+        String datasetId = ""; //Get ID of dataset from somwhere
+        String catalogueId = ""; //Get ID of catalogue from somwhere
+        brokerMessageService.deleteDataSet(datasetId, catalogueId, datasetDeleteReply -> {
+            if(datasetDeleteReply.succeeded()){
+                brokerMessageService.deleteCatalogue(catalogueId, datasetReply -> handleReply(datasetReply, readyHandler));
+            } else {
+                LOGGER.error(datasetDeleteReply.cause());
+            }
+        });
+    }
+
+    private void handleReply(AsyncResult<BrokerMessageService> datasetReply, Handler<AsyncResult<Void>> readyHandler) {
+        if(datasetReply.succeeded()){
+            LOGGER.info("success");
+            readyHandler.handle(Future.succeededFuture());
+        } else {
+            LOGGER.error(datasetReply.cause());
+            readyHandler.handle(Future.failedFuture(datasetReply.cause()));
+        }
+    }
 
     private JsonObject toJson(Object object){
         try {

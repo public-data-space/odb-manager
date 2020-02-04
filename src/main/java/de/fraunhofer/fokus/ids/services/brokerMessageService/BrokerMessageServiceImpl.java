@@ -37,6 +37,18 @@ public class BrokerMessageServiceImpl implements BrokerMessageService{
                 });
     }
 
+    private void delete(int port, String host, String path, Handler<AsyncResult<String>> resultHandler) {
+        webClient
+                .delete(port, host, path).send( ar -> {
+                    if (ar.succeeded()) {
+                        resultHandler.handle(Future.succeededFuture(ar.result().bodyAsString()));
+                    } else {
+                        LOGGER.error(ar.cause());
+                        resultHandler.handle(Future.failedFuture(ar.cause()));
+                    }
+                });
+    }
+
     @Override
     public BrokerMessageService createCatalogue(JsonObject body, String id, Handler<AsyncResult<BrokerMessageService>> readyHandler) {
         put(piveauPort,piveauHost,"/catalogues/"+id, body, jsonObjectAsyncResult -> {
@@ -67,6 +79,38 @@ public class BrokerMessageServiceImpl implements BrokerMessageService{
                 readyHandler.handle(Future.failedFuture(jsonObjectAsyncResult.cause()));
             }
 
+        });
+        return this;
+    }
+
+    @Override
+    public BrokerMessageService deleteDataSet( String id, String catalogue, Handler<AsyncResult<BrokerMessageService>> readyHandler) {
+        delete(piveauPort,piveauHost,"/datasets/"+id+"?catalogue="+catalogue, jsonObjectAsyncResult -> {
+            if (jsonObjectAsyncResult.succeeded()) {
+                LOGGER.info("Succeeded");
+                readyHandler.handle(Future.succeededFuture());
+
+            }
+            else {
+                LOGGER.error(jsonObjectAsyncResult.cause());
+                readyHandler.handle(Future.failedFuture(jsonObjectAsyncResult.cause()));
+            }
+        });
+        return this;
+    }
+
+    @Override
+    public BrokerMessageService deleteCatalogue(String id, Handler<AsyncResult<BrokerMessageService>> readyHandler) {
+        delete(piveauPort,piveauHost,"/catalogues/"+id, jsonObjectAsyncResult -> {
+            if (jsonObjectAsyncResult.succeeded()) {
+                LOGGER.info("Succeeded");
+                readyHandler.handle(Future.succeededFuture());
+            }
+            else {
+                LOGGER.error(jsonObjectAsyncResult.cause());
+                readyHandler.handle(Future.failedFuture(jsonObjectAsyncResult.cause()));
+
+            }
         });
         return this;
     }

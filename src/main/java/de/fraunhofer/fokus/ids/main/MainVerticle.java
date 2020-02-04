@@ -5,11 +5,13 @@ import de.fraunhofer.fokus.ids.services.brokerMessageService.BrokerMessageServic
 import io.vertx.core.*;
 import io.vertx.core.http.HttpMethod;
 import io.vertx.core.http.HttpServer;
+import io.vertx.core.http.HttpServerResponse;
 import io.vertx.core.logging.Logger;
 import io.vertx.core.logging.LoggerFactory;
 import io.vertx.ext.web.Router;
 import io.vertx.ext.web.handler.BodyHandler;
 import io.vertx.ext.web.handler.CorsHandler;
+import org.apache.http.entity.ContentType;
 
 import java.util.Arrays;
 import java.util.HashSet;
@@ -67,14 +69,22 @@ public class MainVerticle extends AbstractVerticle {
         router.route().handler(CorsHandler.create("*").allowedHeaders(allowedHeaders).allowedMethods(allowedMethods));
         router.route().handler(BodyHandler.create());
 
-        router.post("/data").handler(routingContext -> brokerMessageController.getData(routingContext.getBodyAsString()));
+        router.post("/data").handler(routingContext -> brokerMessageController.getData(routingContext.getBodyAsString(),
+                reply -> reply(reply.result(), routingContext.response())));
         LOGGER.info("Starting odb manager ");
         server.requestHandler(router).listen(8080);
         LOGGER.info("odb-manager deployed on port "+8080);
     }
 
-
-
+    private void reply(Object result, HttpServerResponse response) {
+        if (result != null) {
+            String entity = result.toString();
+            response.putHeader("content-type", ContentType.APPLICATION_JSON.toString());
+            response.end(entity);
+        } else {
+            response.setStatusCode(404).end();
+        }
+    }
 
     public static void main(String[] args) {
         String[] params = Arrays.copyOf(args, args.length + 1);
