@@ -1,7 +1,10 @@
-FROM maven:3.6.0-jdk-11-slim AS build
+FROM openjdk:12-alpine
+
+RUN addgroup -S ids && adduser -S -g ids ids
 WORKDIR /home/app/
-COPY src/ ./src
-COPY pom.xml ./
-RUN mvn -f ./pom.xml clean package
+RUN chown -R ids: ./ && chmod -R u+w ./
+RUN mkdir -p /ids/repo/ && chown -R ids: /ids/repo/ && chmod -R u+w /ids/repo/
+COPY /target/odb-manager-1.0-SNAPSHOT-fat.jar .
 EXPOSE 8080
-ENTRYPOINT ["java","-jar","./target/odb-manager-1.0-SNAPSHOT-fat.jar"]
+USER ids
+ENTRYPOINT ["java", "-jar", "./odb-manager-1.0-SNAPSHOT-fat.jar"]
