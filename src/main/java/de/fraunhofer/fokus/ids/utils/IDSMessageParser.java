@@ -9,11 +9,11 @@ import io.vertx.core.logging.LoggerFactory;
 public class IDSMessageParser {
     private static Logger LOGGER = LoggerFactory.getLogger(IDSMessageParser.class.getName());
 
-    private static final String SEPARATOR = "IDSMSGPART";
+    private static final String SEPARATOR = "--IDSMSGPART";
 
     public static ConnectorNotificationMessage getHeader (String input){
         try{
-            int beginBody = input.indexOf("--"+SEPARATOR, ("--"+SEPARATOR).length()+1);
+            int beginBody = input.indexOf(SEPARATOR, (SEPARATOR).length()+1);
             String headerPart = input.substring(0, beginBody);
 
             String header  = headerPart.substring(headerPart.indexOf("{"),headerPart.lastIndexOf("}")+1);
@@ -27,7 +27,7 @@ public class IDSMessageParser {
 
     public static Connector getBody (String input){
         try{
-            int beginBody = input.indexOf("--"+SEPARATOR, ("--"+SEPARATOR).length()+1);
+            int beginBody = input.indexOf(SEPARATOR, (SEPARATOR).length()+1);
             String bodyPart = input.substring(beginBody);
             String body  = bodyPart.substring(bodyPart.indexOf("{"),bodyPart.lastIndexOf("}")+1);
             return Json.decodeValue(body, Connector.class);

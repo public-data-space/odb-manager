@@ -2,6 +2,7 @@ package de.fraunhofer.fokus.ids.main;
 
 import de.fraunhofer.fokus.ids.controller.BrokerMessageController;
 import de.fraunhofer.fokus.ids.services.brokerMessageService.BrokerMessageServiceVerticle;
+import de.fraunhofer.fokus.ids.services.dcatTransformerService.DCATTransformerServiceVerticle;
 import io.vertx.core.*;
 import io.vertx.core.http.HttpMethod;
 import io.vertx.core.http.HttpServer;
@@ -29,7 +30,11 @@ public class MainVerticle extends AbstractVerticle {
         deploymentOptions.setWorker(true);
 
         Future<String> deployment = Future.succeededFuture();
-        deployment.compose(id2 -> {
+        deployment.compose(id1 -> {
+            Future<String> dcatTransformer = Future.future();
+            vertx.deployVerticle(DCATTransformerServiceVerticle.class.getName(), deploymentOptions, dcatTransformer.completer());
+            return dcatTransformer;
+        }).compose(id2 -> {
             Future<String> brokerMessage = Future.future();
             vertx.deployVerticle(BrokerMessageServiceVerticle.class.getName(), deploymentOptions, brokerMessage.completer());
             return brokerMessage;
@@ -42,9 +47,6 @@ public class MainVerticle extends AbstractVerticle {
                 startFuture.fail(ar.cause());
             }
         });
-
-
-
     }
 
     private void createHttpServer(Vertx vertx) {
@@ -91,7 +93,4 @@ public class MainVerticle extends AbstractVerticle {
         params[params.length - 1] = MainVerticle.class.getName();
         Launcher.executeCommand("run", params);
     }
-
-
-
 }

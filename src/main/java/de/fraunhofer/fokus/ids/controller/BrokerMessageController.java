@@ -1,25 +1,27 @@
 package de.fraunhofer.fokus.ids.controller;
 
 import de.fraunhofer.fokus.ids.services.brokerMessageService.BrokerMessageService;
+import de.fraunhofer.fokus.ids.services.dcatTransformerService.DCATTransformerService;
 import de.fraunhofer.fokus.ids.utils.IDSMessageParser;
 import de.fraunhofer.iais.eis.*;
-import io.vertx.core.AsyncResult;
-import io.vertx.core.Future;
-import io.vertx.core.Handler;
-import io.vertx.core.Vertx;
+import io.vertx.core.*;
 import io.vertx.core.json.Json;
 import io.vertx.core.json.JsonObject;
 import io.vertx.core.logging.Logger;
 import io.vertx.core.logging.LoggerFactory;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.UUID;
 
 public class BrokerMessageController {
     private Logger LOGGER = LoggerFactory.getLogger(BrokerMessageController.class.getName());
     private BrokerMessageService brokerMessageService;
+    private DCATTransformerService dcatTransformerService;
 
     public BrokerMessageController(Vertx vertx) {
         this.brokerMessageService = BrokerMessageService.createProxy(vertx,"brokerMessageService");
+        this.dcatTransformerService = DCATTransformerService.createProxy(vertx, "dcatTransformerService");
     }
 
     public void getData (String input, Handler<AsyncResult<Void>> readyHandler){
@@ -44,25 +46,69 @@ public class BrokerMessageController {
     private void update(Connector connector, Handler<AsyncResult<Void>> readyHandler) {
         String datasetId = ""; //Get ID of dataset from somwhere
         String catalogueId = ""; //Get ID of catalogue from somwhere
-        brokerMessageService.createCatalogue(toJson(connector),catalogueId, catalogueReply -> {
-            if(catalogueReply.succeeded()){
-                brokerMessageService.createDataSet(toJson(connector), datasetId, catalogueId, datasetReply -> handleReply(datasetReply, readyHandler));
+
+        Future<String> catalogueFuture = Future.future();
+        List<Future> datassetFutures = new ArrayList<>();
+        initTransformations(connector, catalogueFuture, datassetFutures);
+
+        catalogueFuture.setHandler( reply -> {
+            if(reply.succeeded()) {
+                brokerMessageService.createCatalogue(toJson(reply.result()), catalogueId, catalogueReply -> {
+                    if (catalogueReply.succeeded()) {
+                        CompositeFuture.all(datassetFutures).setHandler( dataassetCreateReply -> {
+                           if(dataassetCreateReply.succeeded()){
+                                for(Future dataassetFuture : datassetFutures){
+                                    brokerMessageService.createDataSet(toJson(dataassetFuture.result()), datasetId, catalogueId, datasetReply -> {});
+                                }
+                               readyHandler.handle(Future.succeededFuture());
+                           } else {
+                            LOGGER.error(dataassetCreateReply.cause());
+                            readyHandler.handle(Future.failedFuture(dataassetCreateReply.cause()));
+                           }
+                        });
+                    } else {
+                        LOGGER.error(catalogueReply.cause());
+                        readyHandler.handle(Future.failedFuture(catalogueReply.cause()));
+
+                    }
+                });
             } else {
-                LOGGER.error(catalogueReply.cause());
-                readyHandler.handle(Future.failedFuture(catalogueReply.cause()));
+                LOGGER.error(reply.cause());
+                readyHandler.handle(Future.failedFuture(reply.cause()));
             }
         });
     }
 
     private void register(Connector connector, Handler<AsyncResult<Void>> readyHandler) {
-        String catalogueid = UUID.randomUUID().toString();
-        brokerMessageService.createCatalogue(toJson(connector),catalogueid, catalogueReply -> {
-            if(catalogueReply.succeeded()){
-                String datasetid = UUID.randomUUID().toString();
-                brokerMessageService.createDataSet(toJson(connector), datasetid, catalogueid, datasetReply -> handleReply(datasetReply, readyHandler));
+        Future<String> catalogueFuture = Future.future();
+        List<Future> datassetFutures = new ArrayList<>();
+        initTransformations(connector, catalogueFuture, datassetFutures);
+
+        catalogueFuture.setHandler( reply -> {
+            if(reply.succeeded()) {
+                String catalogueId = UUID.randomUUID().toString();
+                brokerMessageService.createCatalogue(toJson(reply.result()), catalogueId, catalogueReply -> {
+                    if (catalogueReply.succeeded()) {
+                        CompositeFuture.all(datassetFutures).setHandler( dataassetCreateReply -> {
+                            if(dataassetCreateReply.succeeded()){
+                                for(Future dataassetFuture : datassetFutures){
+                                    String datasetId = UUID.randomUUID().toString();
+                                    brokerMessageService.createDataSet(toJson(dataassetFuture.result()), datasetId, catalogueId, datasetReply -> {});
+                                }
+                                readyHandler.handle(Future.succeededFuture());
+                            } else {
+                                LOGGER.error(dataassetCreateReply.cause());
+                                readyHandler.handle(Future.failedFuture(dataassetCreateReply.cause()));
+                            }
+                        });
+                    } else {
+                        LOGGER.error(catalogueReply.cause());
+                        readyHandler.handle(Future.failedFuture(catalogueReply.cause()));
+                    }
+                });
             } else {
-                LOGGER.error(catalogueReply.cause());
-                readyHandler.handle(Future.failedFuture(catalogueReply.cause()));
+                LOGGER.error(reply.cause());
+                readyHandler.handle(Future.failedFuture(reply.cause()));
             }
         });
     }
@@ -72,20 +118,23 @@ public class BrokerMessageController {
         String catalogueId = ""; //Get ID of catalogue from somwhere
         brokerMessageService.deleteDataSet(datasetId, catalogueId, datasetDeleteReply -> {
             if(datasetDeleteReply.succeeded()){
-                brokerMessageService.deleteCatalogue(catalogueId, datasetReply -> handleReply(datasetReply, readyHandler));
+                brokerMessageService.deleteCatalogue(catalogueId, datasetReply -> {});
+                readyHandler.handle(Future.succeededFuture());
             } else {
                 LOGGER.error(datasetDeleteReply.cause());
             }
         });
     }
 
-    private void handleReply(AsyncResult<BrokerMessageService> datasetReply, Handler<AsyncResult<Void>> readyHandler) {
-        if(datasetReply.succeeded()){
-            LOGGER.info("success");
-            readyHandler.handle(Future.succeededFuture());
-        } else {
-            LOGGER.error(datasetReply.cause());
-            readyHandler.handle(Future.failedFuture(datasetReply.cause()));
+    private void initTransformations(Connector connector, Future<String> catalogueFuture, List<Future> datassetFutures){
+        String con = Json.encode(connector);
+        dcatTransformerService.transformCatalogue(con, catalogueFuture.completer());
+        if(connector.getCatalog() != null) {
+            for (Resource resource : connector.getCatalog().getOffer()) {
+                Future<String> dataassetFuture = Future.future();
+                datassetFutures.add(dataassetFuture);
+                dcatTransformerService.transformDataset(Json.encode(resource), dataassetFuture.completer());
+            }
         }
     }
 
