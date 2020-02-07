@@ -11,3 +11,87 @@ services:
       - REPOSITORY=/ids/repo/
     ports:
       - 8092:8080
+
+  piveau-hub:
+    image: dockerhub.fokus.fraunhofer.de:5000/viaduct/piveau-hub:latest
+    logging:
+      options:
+        max-size: "50m"
+    ports:
+      - 8080:8080
+    environment:
+      - PIVEAU_HUB_TRIPLESTORE_CONFIG={"host":"localhost","port":8890,"data_endpoint":"/sparql-graph-crud-auth","query_endpoint":"/sparql-auth","ping":"","user":"dba","password":"dba"}
+      - PIVEAU_TRIPLESTORE_CONFIG={"address":"http://localhost:8890","username":"dba","password":"dba"}
+
+  piveau-search:
+    image: dockerhub.fokus.fraunhofer.de:5000/viaduct/viaduct-hub-search:prerelease
+    logging:
+      options:
+        max-size: "50m"
+    ports:
+      - 8081:8080
+      - 8082:8081
+    depends_on:
+      - elasticsearch
+    environment:
+      - VIADUCT_HUB_SEARCH_API_KEY=myapikey
+      - VIADUCT_HUB_SEARCH_ES_CONFIG={"host":"elasticsearch","port":9200}
+      - VIADUCT_HUB_SEARCH_GAZETTEER_CONFIG={"url":"http://doesnotmatter.eu"}
+
+  piveau-shacl-validation:
+    image: dockerhub.fokus.fraunhofer.de:5000/viaduct/metrics/shacl-validation:prerelease
+    logging:
+      options:
+        max-size: "50m"
+    ports:
+      - 8083:8080
+
+  piveau-data-upload:
+    image: dockerhub.fokus.fraunhofer.de:5000/viaduct/hub/data-upload:latest
+    logging:
+      options:
+        max-size: "50m"
+    ports:
+      - 8086:8080
+    environment:
+      - MONGO_DB_URI=mongodb://mongo-db:27017
+      - MONGO_DB=fileuploaderdb
+      - HTTP_PORT=8080
+      - API_KEY=Bearer db916db8-8aeb-4915-a3b9-f6b264b5d983
+    depends_on:
+      - mongo-db
+    links:
+      - mongo-db
+
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:7.1.0
+    logging:
+      options:
+        max-size: "50m"
+    environment:
+      - bootstrap.memory_lock=true
+      - discovery.type=single-node
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+    ports:
+      - 9200:9200
+      - 9300:9300
+
+  mongo-db:
+    image: mongo:4.0.6
+    logging:
+      options:
+        max-size: "50m"
+    ports:
+      - 8087:27017
+
+  virtuoso:
+    image: dockerhub.fokus.fraunhofer.de:5000/viaduct/piveau-virtuoso
+    logging:
+      options:
+        max-size: "50m"
+    ports:
+      - 8890:8890
+      - 1111:1111
