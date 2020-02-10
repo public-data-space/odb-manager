@@ -1,21 +1,5 @@
 version: "3.5"
 services:
-  broker:
-    image: broker
-    build:
-      context: .
-      dockerfile: Dockerfile
-    environment:
-      - PIVEAU_HUB_HOST=piveau-hub
-      - PIVEAU_HUB_PORT=8080
-      - REPOSITORY=/ids/repo/
-      - HOST=postgres
-      - PORT=5432
-      - USER=ids
-      - DATABASE=ids
-      - PASSWORD=ids
-    ports:
-      - 8092:8080
 
   piveau-hub:
     image: dockerhub.fokus.fraunhofer.de:5000/viaduct/piveau-hub:latest
@@ -91,20 +75,6 @@ services:
         max-size: "50m"
     ports:
       - 8087:27017
-
-  postgres:
-    image: postgres
-    logging:
-      options:
-        max-size: "50m"
-    ports:
-      - 5433:5432
-    volumes:
-      - docker-entrypoint-initdb.d:/docker-entrypoint-initdb.d
-    environment:
-      - POSTGRES_PASSWORD=123456
-      - DATABASE_USER=ids
-      - DATABASE_USER_PW=ids
 
   virtuoso:
     image: dockerhub.fokus.fraunhofer.de:5000/viaduct/piveau-virtuoso
