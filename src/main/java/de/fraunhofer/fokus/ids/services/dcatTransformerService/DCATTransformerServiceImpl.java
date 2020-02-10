@@ -33,8 +33,8 @@ public class DCATTransformerServiceImpl implements DCATTransformerService {
                 //     .addProperty(DCTerms.language, "")
                 //    .addProperty(DCTerms.spatial, connector.getPhysicalLocation().toString())
                 .addLiteral(DCTerms.publisher, connector.getMaintainer().toString());
-        addPLainLiterals(resource, connector.getTitle());
-        addPLainLiterals(resource, connector.getDescription());
+        addPLainLiterals(resource, connector.getTitle(), DCTerms.title);
+        addPLainLiterals(resource, connector.getDescription(), DCTerms.description);
 
         model.write(System.out, "TTL");
 
@@ -62,7 +62,7 @@ public class DCATTransformerServiceImpl implements DCATTransformerService {
 
         checkNull(dataasset.getStandardLicense(),DCTerms.license,resource);
         checkNull(dataasset.getVersion(),DCTerms.hasVersion,resource);
-        checkNull(dataasset.getKeyword(),DCAT.keyword,resource);
+        addPLainLiterals(resource, dataasset.getKeyword(),DCAT.keyword);
 
         if (dataasset.getTheme()!=null){
             for (URI uri:dataasset.getTheme()){
@@ -80,17 +80,17 @@ public class DCATTransformerServiceImpl implements DCATTransformerService {
                 resource.addLiteral(DCTerms.language, language.toString());
             }
         }
-        addPLainLiterals(resource, dataasset.getTitle());
-        addPLainLiterals(resource, dataasset.getDescription());
+        addPLainLiterals(resource, dataasset.getTitle(), DCTerms.title);
+        addPLainLiterals(resource, dataasset.getDescription(), DCTerms.description);
         model.write(System.out, "TTL");
 
         return this;
     }
 
-    private void addPLainLiterals(org.apache.jena.rdf.model.Resource resource, ArrayList<? extends PlainLiteral> list){
+    private void addPLainLiterals(org.apache.jena.rdf.model.Resource resource, ArrayList<? extends PlainLiteral> list, Property relation){
         if(list != null) {
             for (PlainLiteral literal : list) {
-                resource.addLiteral(DCTerms.title, literal.getValue());
+                resource.addLiteral(relation, literal.getValue());
             }
         }
     }
