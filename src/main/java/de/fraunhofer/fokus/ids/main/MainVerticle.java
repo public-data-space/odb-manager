@@ -2,6 +2,8 @@ package de.fraunhofer.fokus.ids.main;
 
 import de.fraunhofer.fokus.ids.controller.BrokerMessageController;
 import de.fraunhofer.fokus.ids.services.brokerMessageService.BrokerMessageServiceVerticle;
+import de.fraunhofer.fokus.ids.services.databaseService.DatabaseService;
+import de.fraunhofer.fokus.ids.services.databaseService.DatabaseServiceVerticle;
 import de.fraunhofer.fokus.ids.services.dcatTransformerService.DCATTransformerServiceVerticle;
 import io.vertx.core.*;
 import io.vertx.core.http.HttpMethod;
@@ -38,6 +40,10 @@ public class MainVerticle extends AbstractVerticle {
             Future<String> brokerMessage = Future.future();
             vertx.deployVerticle(BrokerMessageServiceVerticle.class.getName(), deploymentOptions, brokerMessage.completer());
             return brokerMessage;
+        }).compose(id3 -> {
+            Future<String> databaseMessage = Future.future();
+            vertx.deployVerticle(DatabaseServiceVerticle.class.getName(), deploymentOptions, databaseMessage.completer());
+            return databaseMessage;
         }).setHandler(ar -> {
             if (ar.succeeded()) {
                 router = Router.router(vertx);

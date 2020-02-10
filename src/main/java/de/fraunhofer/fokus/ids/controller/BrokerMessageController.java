@@ -1,6 +1,7 @@
 package de.fraunhofer.fokus.ids.controller;
 
 import de.fraunhofer.fokus.ids.services.brokerMessageService.BrokerMessageService;
+import de.fraunhofer.fokus.ids.services.databaseService.DatabaseService;
 import de.fraunhofer.fokus.ids.services.dcatTransformerService.DCATTransformerService;
 import de.fraunhofer.fokus.ids.utils.IDSMessageParser;
 import de.fraunhofer.iais.eis.*;
@@ -18,10 +19,12 @@ public class BrokerMessageController {
     private Logger LOGGER = LoggerFactory.getLogger(BrokerMessageController.class.getName());
     private BrokerMessageService brokerMessageService;
     private DCATTransformerService dcatTransformerService;
+    private DatabaseService databaseService;
 
     public BrokerMessageController(Vertx vertx) {
         this.brokerMessageService = BrokerMessageService.createProxy(vertx,"brokerMessageService");
         this.dcatTransformerService = DCATTransformerService.createProxy(vertx, "dcatTransformerService");
+        this.databaseService = DatabaseService.createProxy(vertx, "databaseService");
     }
 
     public void getData (String input, Handler<AsyncResult<Void>> readyHandler){
