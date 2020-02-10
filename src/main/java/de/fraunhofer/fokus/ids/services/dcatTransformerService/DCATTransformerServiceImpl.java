@@ -1,8 +1,6 @@
 package de.fraunhofer.fokus.ids.services.dcatTransformerService;
 
-import de.fraunhofer.iais.eis.Connector;
-import de.fraunhofer.iais.eis.Language;
-import de.fraunhofer.iais.eis.Resource;
+import de.fraunhofer.iais.eis.*;
 import de.fraunhofer.iais.eis.util.PlainLiteral;
 import io.vertx.core.AsyncResult;
 import io.vertx.core.Future;
@@ -10,15 +8,17 @@ import io.vertx.core.Handler;
 import io.vertx.core.json.Json;
 import org.apache.jena.rdf.model.Model;
 import org.apache.jena.rdf.model.ModelFactory;
+import org.apache.jena.rdf.model.Property;
 import org.apache.jena.sparql.vocabulary.FOAF;
 import org.apache.jena.vocabulary.*;
 
+import java.net.URI;
 import java.util.ArrayList;
 
 public class DCATTransformerServiceImpl implements DCATTransformerService {
 
     public DCATTransformerServiceImpl(Handler<AsyncResult<DCATTransformerService>> readyHandler){
-        readyHandler.handle(Future.succeededFuture());
+        readyHandler.handle(Future.succeededFuture(this));
     }
 
     @Override
@@ -41,6 +41,12 @@ public class DCATTransformerServiceImpl implements DCATTransformerService {
         return this;
     }
 
+    private void checkNull(Object object, Property property,org.apache.jena.rdf.model.Resource resource ){
+        if (object!=null){
+                resource.addProperty(property, String.valueOf(object));
+        }
+    }
+
     @Override
     public DCATTransformerService transformDataset(String datasetJson, Handler<AsyncResult<String>> readyHandler) {
         Resource dataasset = Json.decodeValue(datasetJson, Resource.class);
@@ -50,6 +56,25 @@ public class DCATTransformerServiceImpl implements DCATTransformerService {
         org.apache.jena.rdf.model.Resource resource = model.createResource(dataasset.getId().toString())
                 .addProperty(RDF.type, DCAT.Dataset);
 
+        if (dataasset.getPublisher() != null ){
+            checkNull(dataasset.getPublisher().getId(),DCTerms.publisher,resource);
+        }
+
+        checkNull(dataasset.getStandardLicense(),DCTerms.license,resource);
+        checkNull(dataasset.getVersion(),DCTerms.hasVersion,resource);
+        checkNull(dataasset.getKeyword(),DCAT.keyword,resource);
+
+        if (dataasset.getTheme()!=null){
+            for (URI uri:dataasset.getTheme()){
+                checkNull(uri,DCAT.theme,resource);
+            }
+        }
+
+        for (Endpoint endpoint:dataasset.getResourceEndpoint()){
+            String string = endpoint.getEndpointHost().getId()+endpoint.getPath();
+            resource.addProperty(DCAT.endpointURL,string);
+        }
+
         if(dataasset.getLanguage() != null) {
             for (Language language : dataasset.getLanguage()) {
                 resource.addLiteral(DCTerms.language, language.toString());
@@ -57,6 +82,8 @@ public class DCATTransformerServiceImpl implements DCATTransformerService {
         }
         addPLainLiterals(resource, dataasset.getTitle());
         addPLainLiterals(resource, dataasset.getDescription());
+        model.write(System.out, "TTL");
+
         return this;
     }
 
