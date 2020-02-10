@@ -18,6 +18,9 @@ public interface DCATTransformerService {
     @Fluent
     DCATTransformerService transformDataset(String datasetJson, Handler<AsyncResult<String>> readyHandler);
 
+    @Fluent
+    DCATTransformerService transformDistribution(String distributionJson, Handler<AsyncResult<String>> readyHandler);
+
     @GenIgnore
     static DCATTransformerService create(Handler<AsyncResult<DCATTransformerService>> readyHandler) {
         return new DCATTransformerServiceImpl(readyHandler);

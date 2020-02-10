@@ -49,7 +49,8 @@ public class BrokerMessageController {
 
         Future<String> catalogueFuture = Future.future();
         List<Future> datassetFutures = new ArrayList<>();
-        initTransformations(connector, catalogueFuture, datassetFutures);
+        List<Future> distributionFutures = new ArrayList<>();
+        initTransformations(connector, catalogueFuture, datassetFutures,distributionFutures);
 
         catalogueFuture.setHandler( reply -> {
             if(reply.succeeded()) {
@@ -82,13 +83,26 @@ public class BrokerMessageController {
     private void register(Connector connector, Handler<AsyncResult<Void>> readyHandler) {
         Future<String> catalogueFuture = Future.future();
         List<Future> datassetFutures = new ArrayList<>();
-        initTransformations(connector, catalogueFuture, datassetFutures);
+        List<Future> distributionFutures = new ArrayList<>();
+        initTransformations(connector, catalogueFuture, datassetFutures,distributionFutures);
 
         catalogueFuture.setHandler( reply -> {
             if(reply.succeeded()) {
                 String catalogueId = UUID.randomUUID().toString();
                 brokerMessageService.createCatalogue(toJson(reply.result()), catalogueId, catalogueReply -> {
                     if (catalogueReply.succeeded()) {
+                        CompositeFuture.all(distributionFutures).setHandler( dataassetCreateReply -> {
+                            if(dataassetCreateReply.succeeded()){
+                                for(Future distributionFuture : distributionFutures){
+                                    String datasetId = UUID.randomUUID().toString();
+                                    brokerMessageService.createDistribution(toJson(distributionFuture.result()), datasetId, catalogueId, datasetReply -> {});
+                                }
+                                readyHandler.handle(Future.succeededFuture());
+                            } else {
+                                LOGGER.error(dataassetCreateReply.cause());
+                                readyHandler.handle(Future.failedFuture(dataassetCreateReply.cause()));
+                            }
+                        });
                         CompositeFuture.all(datassetFutures).setHandler( dataassetCreateReply -> {
                             if(dataassetCreateReply.succeeded()){
                                 for(Future dataassetFuture : datassetFutures){
@@ -126,14 +140,20 @@ public class BrokerMessageController {
         });
     }
 
-    private void initTransformations(Connector connector, Future<String> catalogueFuture, List<Future> datassetFutures){
+    private void initTransformations(Connector connector, Future<String> catalogueFuture, List<Future> datassetFutures, List<Future> distributionFutures){
         String con = Json.encode(connector);
         dcatTransformerService.transformCatalogue(con, catalogueFuture.completer());
         if(connector.getCatalog() != null) {
             for (Resource resource : connector.getCatalog().getOffer()) {
                 Future<String> dataassetFuture = Future.future();
                 datassetFutures.add(dataassetFuture);
+
+                Future<String> distributionFuture = Future.future();
+                distributionFutures.add(distributionFuture);
+
+                dcatTransformerService.transformDistribution(Json.encode(resource), distributionFuture.completer());
                 dcatTransformerService.transformDataset(Json.encode(resource), dataassetFuture.completer());
+
             }
         }
     }

@@ -37,6 +37,19 @@ public class BrokerMessageServiceImpl implements BrokerMessageService{
                 });
     }
 
+    private void post(int port, String host, String path, JsonObject payload, Handler<AsyncResult<String>> resultHandler) {
+        webClient
+                .post(port, host, path)
+                .sendJsonObject(payload, ar -> {
+                    if (ar.succeeded()) {
+                        resultHandler.handle(Future.succeededFuture(ar.result().bodyAsString()));
+                    } else {
+                        LOGGER.error(ar.cause());
+                        resultHandler.handle(Future.failedFuture(ar.cause()));
+                    }
+                });
+    }
+
     private void delete(int port, String host, String path, Handler<AsyncResult<String>> resultHandler) {
         webClient
                 .delete(port, host, path).send( ar -> {
@@ -69,6 +82,23 @@ public class BrokerMessageServiceImpl implements BrokerMessageService{
     @Override
     public BrokerMessageService createDataSet(JsonObject body, String id, String catalogue, Handler<AsyncResult<BrokerMessageService>> readyHandler) {
         put(piveauPort,piveauHost,"/datasets/"+id+"?catalogue="+catalogue, body, jsonObjectAsyncResult -> {
+            if (jsonObjectAsyncResult.succeeded()) {
+                LOGGER.info("Succeeded");
+                readyHandler.handle(Future.succeededFuture());
+
+            }
+            else {
+                LOGGER.error(jsonObjectAsyncResult.cause());
+                readyHandler.handle(Future.failedFuture(jsonObjectAsyncResult.cause()));
+            }
+
+        });
+        return this;
+    }
+
+    @Override
+    public BrokerMessageService createDistribution(JsonObject body, String dataset, String catalogue, Handler<AsyncResult<BrokerMessageService>> readyHandler) {
+        post(piveauPort,piveauHost,"/distributions?dataset="+dataset+"&catalogue="+catalogue, body, jsonObjectAsyncResult -> {
             if (jsonObjectAsyncResult.succeeded()) {
                 LOGGER.info("Succeeded");
                 readyHandler.handle(Future.succeededFuture());

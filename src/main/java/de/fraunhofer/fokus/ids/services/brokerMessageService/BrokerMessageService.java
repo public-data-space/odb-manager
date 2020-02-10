@@ -17,8 +17,12 @@ public interface BrokerMessageService {
     @Fluent
     BrokerMessageService createCatalogue(JsonObject body, String id, Handler<AsyncResult<BrokerMessageService>> readyHandler);
 
+
     @Fluent
     BrokerMessageService createDataSet(JsonObject body, String id, String catalogue, Handler<AsyncResult<BrokerMessageService>> readyHandler);
+
+    @Fluent
+    BrokerMessageService createDistribution(JsonObject body, String dataset, String catalogue, Handler<AsyncResult<BrokerMessageService>> readyHandler);
 
     @Fluent
     BrokerMessageService deleteDataSet(String id, String catalogue, Handler<AsyncResult<BrokerMessageService>> readyHandler);

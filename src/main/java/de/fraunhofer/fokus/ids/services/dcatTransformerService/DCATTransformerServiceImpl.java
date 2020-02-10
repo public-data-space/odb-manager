@@ -14,6 +14,7 @@ import org.apache.jena.vocabulary.*;
 
 import java.net.URI;
 import java.util.ArrayList;
+import java.util.UUID;
 
 public class DCATTransformerServiceImpl implements DCATTransformerService {
 
@@ -86,6 +87,27 @@ public class DCATTransformerServiceImpl implements DCATTransformerService {
 
         return this;
     }
+
+    @Override
+    public DCATTransformerService transformDistribution(String distributionJson, Handler<AsyncResult<String>> readyHandler) {
+        Resource distribution = Json.decodeValue(distributionJson, Resource.class);
+        Model model = setPrefixes(ModelFactory.createDefaultModel());
+        ArrayList<StaticEndpoint> staticEndpointArrayList = (ArrayList<StaticEndpoint>) distribution.getResourceEndpoint();
+
+        org.apache.jena.rdf.model.Resource resource = null;
+        for (StaticEndpoint endpoint: staticEndpointArrayList){
+            String id = endpoint.getEndpointHost().getId() + endpoint.getPath() + endpoint.getEndpointArtifact().getFileName();
+            resource = model.createResource("http://example.org/"+ UUID.randomUUID().toString())
+                    .addProperty(RDF.type, DCAT.Distribution)
+                    .addProperty(DCAT.accessURL, id)
+                    .addProperty(DCTerms.title,"Distribution-"+endpoint.getEndpointArtifact().getFileName());
+
+        }
+        model.write(System.out, "TTL");
+
+        return this;
+    }
+
 
     private void addPLainLiterals(org.apache.jena.rdf.model.Resource resource, ArrayList<? extends PlainLiteral> list, Property relation){
         if(list != null) {
