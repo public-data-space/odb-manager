@@ -26,7 +26,7 @@ public class BrokerMessageServiceVerticle extends AbstractVerticle {
 
         retriever.getConfig(ar -> {
             if (ar.succeeded()) {
-                BrokerMessageService.create(vertx, webClient, ar.result().getInteger("PIVEAU_HUB_PORT"), ar.result().getString("PIVEAU_HUB_HOST"),  ready -> {
+                BrokerMessageService.create(vertx, webClient, ar.result().getInteger("PIVEAU_HUB_PORT"), ar.result().getString("PIVEAU_HUB_HOST"), ar.result().getString("PIVEAU_HUB_APIKEY"),  ready -> {
                     if (ready.succeeded()) {
                         ServiceBinder binder = new ServiceBinder(vertx);
                         binder

@@ -6,7 +6,6 @@ import de.fraunhofer.fokus.ids.utils.IDSMessageParser;
 import de.fraunhofer.iais.eis.*;
 import io.vertx.core.*;
 import io.vertx.core.json.Json;
-import io.vertx.core.json.JsonObject;
 import io.vertx.core.logging.Logger;
 import io.vertx.core.logging.LoggerFactory;
 
@@ -39,6 +38,7 @@ public class BrokerMessageController {
             }
         }
         catch (Exception e){
+            e.printStackTrace();
             LOGGER.error("Something went wrong while parsing the IDS message.");
         }
     }
@@ -49,17 +49,16 @@ public class BrokerMessageController {
 
         Future<String> catalogueFuture = Future.future();
         List<Future> datassetFutures = new ArrayList<>();
-        List<Future> distributionFutures = new ArrayList<>();
-        initTransformations(connector, catalogueFuture, datassetFutures,distributionFutures);
+        initTransformations(connector, catalogueFuture, datassetFutures);
 
         catalogueFuture.setHandler( reply -> {
             if(reply.succeeded()) {
-                brokerMessageService.createCatalogue(toJson(reply.result()), catalogueId, catalogueReply -> {
+                brokerMessageService.createCatalogue(reply.result(), catalogueId, catalogueReply -> {
                     if (catalogueReply.succeeded()) {
                         CompositeFuture.all(datassetFutures).setHandler( dataassetCreateReply -> {
                            if(dataassetCreateReply.succeeded()){
-                                for(Future dataassetFuture : datassetFutures){
-                                    brokerMessageService.createDataSet(toJson(dataassetFuture.result()), datasetId, catalogueId, datasetReply -> {});
+                                for(Future<String> dataassetFuture : datassetFutures){
+                                    brokerMessageService.createDataSet(dataassetFuture.result(), datasetId, catalogueId, datasetReply -> {});
                                 }
                                readyHandler.handle(Future.succeededFuture());
                            } else {
@@ -83,31 +82,18 @@ public class BrokerMessageController {
     private void register(Connector connector, Handler<AsyncResult<Void>> readyHandler) {
         Future<String> catalogueFuture = Future.future();
         List<Future> datassetFutures = new ArrayList<>();
-        List<Future> distributionFutures = new ArrayList<>();
-        initTransformations(connector, catalogueFuture, datassetFutures,distributionFutures);
+        initTransformations(connector, catalogueFuture, datassetFutures);
 
         catalogueFuture.setHandler( reply -> {
             if(reply.succeeded()) {
                 String catalogueId = UUID.randomUUID().toString();
-                brokerMessageService.createCatalogue(toJson(reply.result()), catalogueId, catalogueReply -> {
+                brokerMessageService.createCatalogue(reply.result(), catalogueId, catalogueReply -> {
                     if (catalogueReply.succeeded()) {
-                        CompositeFuture.all(distributionFutures).setHandler( dataassetCreateReply -> {
-                            if(dataassetCreateReply.succeeded()){
-                                for(Future distributionFuture : distributionFutures){
-                                    String datasetId = UUID.randomUUID().toString();
-                                    brokerMessageService.createDistribution(toJson(distributionFuture.result()), datasetId, catalogueId, datasetReply -> {});
-                                }
-                                readyHandler.handle(Future.succeededFuture());
-                            } else {
-                                LOGGER.error(dataassetCreateReply.cause());
-                                readyHandler.handle(Future.failedFuture(dataassetCreateReply.cause()));
-                            }
-                        });
                         CompositeFuture.all(datassetFutures).setHandler( dataassetCreateReply -> {
                             if(dataassetCreateReply.succeeded()){
-                                for(Future dataassetFuture : datassetFutures){
+                                for(Future<String> dataassetFuture : datassetFutures){
                                     String datasetId = UUID.randomUUID().toString();
-                                    brokerMessageService.createDataSet(toJson(dataassetFuture.result()), datasetId, catalogueId, datasetReply -> {});
+                                    brokerMessageService.createDataSet(dataassetFuture.result(), datasetId, catalogueId, datasetReply -> {});
                                 }
                                 readyHandler.handle(Future.succeededFuture());
                             } else {
@@ -140,30 +126,16 @@ public class BrokerMessageController {
         });
     }
 
-    private void initTransformations(Connector connector, Future<String> catalogueFuture, List<Future> datassetFutures, List<Future> distributionFutures){
+    private void initTransformations(Connector connector, Future<String> catalogueFuture, List<Future> datassetFutures){
         String con = Json.encode(connector);
         dcatTransformerService.transformCatalogue(con, catalogueFuture.completer());
         if(connector.getCatalog() != null) {
             for (Resource resource : connector.getCatalog().getOffer()) {
                 Future<String> dataassetFuture = Future.future();
                 datassetFutures.add(dataassetFuture);
-
-                Future<String> distributionFuture = Future.future();
-                distributionFutures.add(distributionFuture);
-
-                dcatTransformerService.transformDistribution(Json.encode(resource), distributionFuture.completer());
                 dcatTransformerService.transformDataset(Json.encode(resource), dataassetFuture.completer());
-
             }
         }
     }
 
-    private JsonObject toJson(Object object){
-        try {
-            return new JsonObject(Json.encode(object));
-        } catch (Exception e){
-            LOGGER.error("Something went wrong while parsing the IDS Connector.");
-        }
-        return null;
-    }
 }

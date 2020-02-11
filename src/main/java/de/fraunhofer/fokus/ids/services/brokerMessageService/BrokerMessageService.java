@@ -15,14 +15,14 @@ import io.vertx.ext.web.client.WebClient;
 public interface BrokerMessageService {
 
     @Fluent
-    BrokerMessageService createCatalogue(JsonObject body, String id, Handler<AsyncResult<BrokerMessageService>> readyHandler);
+    BrokerMessageService createCatalogue(String body, String id, Handler<AsyncResult<BrokerMessageService>> readyHandler);
 
 
     @Fluent
-    BrokerMessageService createDataSet(JsonObject body, String id, String catalogue, Handler<AsyncResult<BrokerMessageService>> readyHandler);
+    BrokerMessageService createDataSet(String body, String id, String catalogue, Handler<AsyncResult<BrokerMessageService>> readyHandler);
 
     @Fluent
-    BrokerMessageService createDistribution(JsonObject body, String dataset, String catalogue, Handler<AsyncResult<BrokerMessageService>> readyHandler);
+    BrokerMessageService createDistribution(String body, String dataset, String catalogue, Handler<AsyncResult<BrokerMessageService>> readyHandler);
 
     @Fluent
     BrokerMessageService deleteDataSet(String id, String catalogue, Handler<AsyncResult<BrokerMessageService>> readyHandler);
@@ -30,8 +30,8 @@ public interface BrokerMessageService {
     @Fluent
     BrokerMessageService deleteCatalogue(String id, Handler<AsyncResult<BrokerMessageService>> readyHandler);
     @GenIgnore
-    static BrokerMessageService create(Vertx vertx, WebClient webClient, int gatewayPort, String gatewayHost, Handler<AsyncResult<BrokerMessageService>> readyHandler) {
-        return new BrokerMessageServiceImpl(vertx, webClient, gatewayPort, gatewayHost, readyHandler);
+    static BrokerMessageService create(Vertx vertx, WebClient webClient, int gatewayPort, String gatewayHost, String apikey, Handler<AsyncResult<BrokerMessageService>> readyHandler) {
+        return new BrokerMessageServiceImpl(vertx, webClient, gatewayPort, gatewayHost, apikey, readyHandler);
     }
 
     @GenIgnore
