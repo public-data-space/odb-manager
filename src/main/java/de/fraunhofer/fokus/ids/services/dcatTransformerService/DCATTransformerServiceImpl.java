@@ -99,10 +99,10 @@ public class DCATTransformerServiceImpl implements DCATTransformerService {
                     .addProperty(DCAT.accessURL, accessUrl)
                     .addProperty(DCTerms.title,"Distribution-"+endpoint.getEndpointArtifact().getFileName());
 
-        dataset.addProperty(DCAT.distribution, id);
+        dataset.addProperty(DCAT.distribution, distribution);
 
         try(ByteArrayOutputStream baos = new ByteArrayOutputStream()){
-            model.write(baos);
+            model.write(baos, "TTL");
             readyHandler.handle(Future.succeededFuture(baos.toString()));
         } catch (IOException e) {
             e.printStackTrace();

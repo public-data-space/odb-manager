@@ -72,15 +72,15 @@ public class MainVerticle extends AbstractVerticle {
         router.route().handler(BodyHandler.create());
 
         router.post("/data").handler(routingContext -> brokerMessageController.getData(routingContext.getBodyAsString(),
-                reply -> reply(reply.result(), routingContext.response())));
+                reply -> reply(reply, routingContext.response())));
         LOGGER.info("Starting odb manager ");
-        server.requestHandler(router).listen(8092);
+        server.requestHandler(router).listen(8080);
         LOGGER.info("odb-manager deployed on port "+8080);
     }
 
-    private void reply(Object result, HttpServerResponse response) {
-        if (result != null) {
-            String entity = result.toString();
+    private void reply(AsyncResult result, HttpServerResponse response) {
+        if(result.succeeded() && result.result() != null){
+            String entity = result.result().toString();
             response.putHeader("content-type", ContentType.APPLICATION_JSON.toString());
             response.end(entity);
         } else {

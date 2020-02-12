@@ -23,7 +23,7 @@ public class BrokerMessageController {
         this.dcatTransformerService = DCATTransformerService.createProxy(vertx, "dcatTransformerService");
     }
 
-    public void getData (String input, Handler<AsyncResult<Void>> readyHandler){
+    public void getData (String input, Handler<AsyncResult<String>> readyHandler){
         ConnectorNotificationMessage header = IDSMessageParser.getHeader(input);
         Connector connector = IDSMessageParser.getBody(input);
         try {
@@ -43,7 +43,7 @@ public class BrokerMessageController {
         }
     }
 
-    private void update(Connector connector, Handler<AsyncResult<Void>> readyHandler) {
+    private void update(Connector connector, Handler<AsyncResult<String>> readyHandler) {
         String datasetId = ""; //Get ID of dataset from somwhere
         String catalogueId = ""; //Get ID of catalogue from somwhere
 
@@ -60,7 +60,7 @@ public class BrokerMessageController {
                                 for(Future<String> dataassetFuture : datassetFutures){
                                     brokerMessageService.createDataSet(dataassetFuture.result(), datasetId, catalogueId, datasetReply -> {});
                                 }
-                               readyHandler.handle(Future.succeededFuture());
+                               readyHandler.handle(Future.succeededFuture("Connector successfully updated."));
                            } else {
                             LOGGER.error(dataassetCreateReply.cause());
                             readyHandler.handle(Future.failedFuture(dataassetCreateReply.cause()));
@@ -79,7 +79,7 @@ public class BrokerMessageController {
         });
     }
 
-    private void register(Connector connector, Handler<AsyncResult<Void>> readyHandler) {
+    private void register(Connector connector, Handler<AsyncResult<String>> readyHandler) {
         Future<String> catalogueFuture = Future.future();
         List<Future> datassetFutures = new ArrayList<>();
         initTransformations(connector, catalogueFuture, datassetFutures);
@@ -95,7 +95,7 @@ public class BrokerMessageController {
                                     String datasetId = UUID.randomUUID().toString();
                                     brokerMessageService.createDataSet(dataassetFuture.result(), datasetId, catalogueId, datasetReply -> {});
                                 }
-                                readyHandler.handle(Future.succeededFuture());
+                                readyHandler.handle(Future.succeededFuture("Connector successfully registered."));
                             } else {
                                 LOGGER.error(dataassetCreateReply.cause());
                                 readyHandler.handle(Future.failedFuture(dataassetCreateReply.cause()));
@@ -113,13 +113,13 @@ public class BrokerMessageController {
         });
     }
 
-    private void unregister(Connector connector, Handler<AsyncResult<Void>> readyHandler) {
+    private void unregister(Connector connector, Handler<AsyncResult<String>> readyHandler) {
         String datasetId = ""; //Get ID of dataset from somwhere
         String catalogueId = ""; //Get ID of catalogue from somwhere
         brokerMessageService.deleteDataSet(datasetId, catalogueId, datasetDeleteReply -> {
             if(datasetDeleteReply.succeeded()){
                 brokerMessageService.deleteCatalogue(catalogueId, datasetReply -> {});
-                readyHandler.handle(Future.succeededFuture());
+                readyHandler.handle(Future.succeededFuture("Connector successfully unregistered."));
             } else {
                 LOGGER.error(datasetDeleteReply.cause());
             }

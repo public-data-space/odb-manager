@@ -27,15 +27,14 @@ public class BrokerMessageServiceImpl implements BrokerMessageService{
         readyHandler.handle(Future.succeededFuture(this));
     }
 
-    private void put(int port, String host, String path, String payload, Handler<AsyncResult<String>> resultHandler) {
+    private void put(int port, String host, String path, String payload, Handler<AsyncResult<Void>> resultHandler) {
         webClient
                 .put(port, host, path)
                 .putHeader("content-type", "text/turtle")
                 .putHeader("Authorization", piveauAPIkey)
                 .sendBuffer(Buffer.buffer(payload), ar -> {
                     if (ar.succeeded()) {
-                        System.out.println(ar.result().bodyAsString());
-                        resultHandler.handle(Future.succeededFuture(ar.result().bodyAsString()));
+                        resultHandler.handle(Future.succeededFuture());
                     } else {
                         LOGGER.error(ar.cause());
                         resultHandler.handle(Future.failedFuture(ar.cause()));
@@ -50,7 +49,7 @@ public class BrokerMessageServiceImpl implements BrokerMessageService{
                 .putHeader("Authorization", piveauAPIkey)
                 .sendBuffer(Buffer.buffer(payload), ar -> {
                     if (ar.succeeded()) {
-                        resultHandler.handle(Future.succeededFuture(ar.result().bodyAsString()));
+                        resultHandler.handle(Future.succeededFuture());
                     } else {
                         LOGGER.error(ar.cause());
                         resultHandler.handle(Future.failedFuture(ar.cause()));
@@ -77,7 +76,7 @@ public class BrokerMessageServiceImpl implements BrokerMessageService{
     public BrokerMessageService createCatalogue(String body, String id, Handler<AsyncResult<BrokerMessageService>> readyHandler) {
         put(piveauPort,piveauHost,"/catalogues/"+id, body, jsonObjectAsyncResult -> {
             if (jsonObjectAsyncResult.succeeded()) {
-                LOGGER.info(jsonObjectAsyncResult.result());
+                LOGGER.info("Catalogue "+id+ " successfully registered.");
                 readyHandler.handle(Future.succeededFuture());
             }
             else {
@@ -93,25 +92,8 @@ public class BrokerMessageServiceImpl implements BrokerMessageService{
     public BrokerMessageService createDataSet(String body, String id, String catalogue, Handler<AsyncResult<BrokerMessageService>> readyHandler) {
         put(piveauPort,piveauHost,"/datasets/"+id+"?catalogue="+catalogue, body, jsonObjectAsyncResult -> {
             if (jsonObjectAsyncResult.succeeded()) {
-                LOGGER.info(jsonObjectAsyncResult.result());
+                LOGGER.info("Dataset "+id+ " successfully registered.");
                 readyHandler.handle(Future.succeededFuture());
-            }
-            else {
-                LOGGER.error(jsonObjectAsyncResult.cause());
-                readyHandler.handle(Future.failedFuture(jsonObjectAsyncResult.cause()));
-            }
-
-        });
-        return this;
-    }
-
-    @Override
-    public BrokerMessageService createDistribution(String body, String dataset, String catalogue, Handler<AsyncResult<BrokerMessageService>> readyHandler) {
-        post(piveauPort,piveauHost,"/distributions?dataset="+dataset+"&catalogue="+catalogue, body, jsonObjectAsyncResult -> {
-            if (jsonObjectAsyncResult.succeeded()) {
-                LOGGER.info("Succeeded");
-                readyHandler.handle(Future.succeededFuture());
-
             }
             else {
                 LOGGER.error(jsonObjectAsyncResult.cause());
@@ -126,9 +108,8 @@ public class BrokerMessageServiceImpl implements BrokerMessageService{
     public BrokerMessageService deleteDataSet( String id, String catalogue, Handler<AsyncResult<BrokerMessageService>> readyHandler) {
         delete(piveauPort,piveauHost,"/datasets/"+id+"?catalogue="+catalogue, jsonObjectAsyncResult -> {
             if (jsonObjectAsyncResult.succeeded()) {
-                LOGGER.info("Succeeded");
+                LOGGER.info("Dataset "+id+ " successfully deleted.");
                 readyHandler.handle(Future.succeededFuture());
-
             }
             else {
                 LOGGER.error(jsonObjectAsyncResult.cause());
@@ -142,13 +123,12 @@ public class BrokerMessageServiceImpl implements BrokerMessageService{
     public BrokerMessageService deleteCatalogue(String id, Handler<AsyncResult<BrokerMessageService>> readyHandler) {
         delete(piveauPort,piveauHost,"/catalogues/"+id, jsonObjectAsyncResult -> {
             if (jsonObjectAsyncResult.succeeded()) {
-                LOGGER.info("Succeeded");
+                LOGGER.info("Catalogue "+id+ " successfully deleted.");
                 readyHandler.handle(Future.succeededFuture());
             }
             else {
                 LOGGER.error(jsonObjectAsyncResult.cause());
                 readyHandler.handle(Future.failedFuture(jsonObjectAsyncResult.cause()));
-
             }
         });
         return this;
