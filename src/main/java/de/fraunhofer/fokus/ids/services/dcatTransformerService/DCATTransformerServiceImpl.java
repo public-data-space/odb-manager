@@ -1,8 +1,6 @@
 package de.fraunhofer.fokus.ids.services.dcatTransformerService;
 
-import de.fraunhofer.iais.eis.Connector;
-import de.fraunhofer.iais.eis.Language;
-import de.fraunhofer.iais.eis.Resource;
+import de.fraunhofer.iais.eis.*;
 import de.fraunhofer.iais.eis.util.PlainLiteral;
 import io.vertx.core.AsyncResult;
 import io.vertx.core.Future;
@@ -10,15 +8,20 @@ import io.vertx.core.Handler;
 import io.vertx.core.json.Json;
 import org.apache.jena.rdf.model.Model;
 import org.apache.jena.rdf.model.ModelFactory;
+import org.apache.jena.rdf.model.Property;
 import org.apache.jena.sparql.vocabulary.FOAF;
 import org.apache.jena.vocabulary.*;
 
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.net.URI;
 import java.util.ArrayList;
+import java.util.UUID;
 
 public class DCATTransformerServiceImpl implements DCATTransformerService {
 
     public DCATTransformerServiceImpl(Handler<AsyncResult<DCATTransformerService>> readyHandler){
-        readyHandler.handle(Future.succeededFuture());
+        readyHandler.handle(Future.succeededFuture(this));
     }
 
     @Override
@@ -27,16 +30,26 @@ public class DCATTransformerServiceImpl implements DCATTransformerService {
 
         Model model = setPrefixes(ModelFactory.createDefaultModel());
 
-        org.apache.jena.rdf.model.Resource resource = model.createResource(connector.getId().toString())
-                .addProperty(RDF.type, DCAT.catalog)
+        org.apache.jena.rdf.model.Resource catalogue = model.createResource(connector.getId().toString())
+                .addProperty(RDF.type, DCAT.Catalog)
                 .addLiteral(DCTerms.type, "dcat-ap")
-                //     .addProperty(DCTerms.language, "")
-                //    .addProperty(DCTerms.spatial, connector.getPhysicalLocation().toString())
-                .addLiteral(DCTerms.publisher, connector.getMaintainer().toString());
-        addPLainLiterals(resource, connector.getTitle());
-        addPLainLiterals(resource, connector.getDescription());
+                .addProperty(DCTerms.language, model.createProperty("http://publications.europa.eu/resource/authority/language/ENG"));
 
-        model.write(System.out, "TTL");
+        org.apache.jena.rdf.model.Resource publisher = model.createResource("http://ids.fokus.fraunhofer.de/publisher/"+UUID.randomUUID().toString());
+        publisher.addProperty(RDF.type, FOAF.Agent)
+                .addLiteral(FOAF.name, connector.getMaintainer().toString());
+
+        catalogue.addProperty(DCTerms.publisher, publisher);
+
+        addPLainLiterals(catalogue, connector.getTitle(), DCTerms.title);
+        addPLainLiterals(catalogue, connector.getDescription(), DCTerms.description);
+
+        try(ByteArrayOutputStream baos = new ByteArrayOutputStream()){
+            model.write(baos, "TTL");
+            readyHandler.handle(Future.succeededFuture(baos.toString()));
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
 
         return this;
     }
@@ -47,23 +60,61 @@ public class DCATTransformerServiceImpl implements DCATTransformerService {
 
         Model model = setPrefixes(ModelFactory.createDefaultModel());
 
-        org.apache.jena.rdf.model.Resource resource = model.createResource(dataasset.getId().toString())
+        org.apache.jena.rdf.model.Resource dataset = model.createResource(dataasset.getId().toString())
                 .addProperty(RDF.type, DCAT.Dataset);
+
+        if (dataasset.getPublisher() != null ){
+            checkNull(dataasset.getPublisher().getId(),DCTerms.publisher,dataset);
+        }
+
+        checkNull(dataasset.getStandardLicense(),DCTerms.license,dataset);
+        checkNull(dataasset.getVersion(),DCTerms.hasVersion,dataset);
+        addPLainLiterals(dataset, dataasset.getKeyword(),DCAT.keyword);
+
+        if (dataasset.getTheme()!=null){
+            for (URI uri:dataasset.getTheme()){
+                checkNull(uri,DCAT.theme,dataset);
+            }
+        }
+
+        for (Endpoint endpoint:dataasset.getResourceEndpoint()){
+            String string = endpoint.getEndpointHost().getId()+endpoint.getPath();
+            dataset.addProperty(DCAT.endpointURL,string);
+        }
 
         if(dataasset.getLanguage() != null) {
             for (Language language : dataasset.getLanguage()) {
-                resource.addLiteral(DCTerms.language, language.toString());
+                dataset.addLiteral(DCTerms.language, language.toString());
             }
         }
-        addPLainLiterals(resource, dataasset.getTitle());
-        addPLainLiterals(resource, dataasset.getDescription());
+        addPLainLiterals(dataset, dataasset.getTitle(), DCTerms.title);
+        addPLainLiterals(dataset, dataasset.getDescription(), DCTerms.description);
+
+        StaticEndpoint endpoint = (StaticEndpoint) dataasset.getResourceEndpoint().get(0);
+
+        String accessUrl = endpoint.getEndpointHost().getId() + endpoint.getPath() + endpoint.getEndpointArtifact().getFileName();
+        String id = "http://example.org/"+ UUID.randomUUID().toString();
+        org.apache.jena.rdf.model.Resource distribution = model.createResource(id)
+                    .addProperty(RDF.type, DCAT.Distribution)
+                    .addProperty(DCAT.accessURL, accessUrl)
+                    .addProperty(DCTerms.title,"Distribution-"+endpoint.getEndpointArtifact().getFileName());
+
+        dataset.addProperty(DCAT.distribution, distribution);
+
+        try(ByteArrayOutputStream baos = new ByteArrayOutputStream()){
+            model.write(baos, "TTL");
+            readyHandler.handle(Future.succeededFuture(baos.toString()));
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+
         return this;
     }
 
-    private void addPLainLiterals(org.apache.jena.rdf.model.Resource resource, ArrayList<? extends PlainLiteral> list){
+    private void addPLainLiterals(org.apache.jena.rdf.model.Resource resource, ArrayList<? extends PlainLiteral> list, Property relation){
         if(list != null) {
             for (PlainLiteral literal : list) {
-                resource.addLiteral(DCTerms.title, literal.getValue());
+                resource.addLiteral(relation, literal.getValue());
             }
         }
     }
@@ -72,52 +123,21 @@ public class DCATTransformerServiceImpl implements DCATTransformerService {
         return model.setNsPrefix("dcat", DCAT.NS)
                 .setNsPrefix("dct", DCTerms.NS)
                 .setNsPrefix("foaf", FOAF.NS)
-                .setNsPrefix("locn","<http://www.w3.org/ns/locn#>")
+                .setNsPrefix("locn","http://www.w3.org/ns/locn#")
                 .setNsPrefix("owl", OWL.NS)
                 .setNsPrefix("rdf", RDF.uri)
                 .setNsPrefix("rdfs", RDFS.uri)
-                .setNsPrefix("schema","<http://schema.org/>")
+                .setNsPrefix("schema","http://schema.org/")
                 .setNsPrefix("skos", SKOS.uri)
-                .setNsPrefix("time"," <http://www.w3.org/2006/time>")
+                .setNsPrefix("time","http://www.w3.org/2006/time")
                 .setNsPrefix("vcard", VCARD.uri)
-                .setNsPrefix("xml","<http://www.w3.org/XML/1998/namespace>")
+                .setNsPrefix("xml","http://www.w3.org/XML/1998/namespace")
                 .setNsPrefix("xsd", XSD.NS);
     }
 
-    public static void main(String[] args) {
-        Connector c = Json.decodeValue(
-                "{\n" +
-                        "\"@type\" : \"ids:BaseConnector\",\n" +
-                        "\"version\" : \"0.0.1\",\n" +
-                        "\"securityProfile\" : {\n" +
-                        "\"@id\" : \"https://w3id.org/idsa/code/BASE_CONNECTOR_SECURITY_PROFILE\"\n" +
-                        "},\n" +
-                        "\"catalog\" : {\n" +
-                        "\"@type\" : \"ids:Catalog\",\n" +
-                        "\"request\" : [ ],\n" +
-                        "\"offer\" : [ ],\n" +
-                        "\"@id\" : \"http://fokus.fraunhofer.de/odc#Catalog\"\n" +
-                        "},\n" +
-                        "\"maintainer\" : \"http://fokus.fraunhofer.de/\",\n" +
-                        "\"curator\" : \"http://fokus.fraunhofer.de/\",\n" +
-                        "\"inboundModelVersion\" : [ \"2.0.0\" ],\n" +
-                        "\"title\" : [ {\n" +
-                        "\"@value\" : \"Open Data Connector\"\n" +
-                        "} ],\n" +
-                        "\"outboundModelVersion\" : \"2.0.0\",\n" +
-                        "\"@id\" : \"http://fokus.fraunhofer.de/odc#Connector\",\n" +
-                        "\"host\" : [ {\n" +
-                        "\"@type\" : \"ids:Host\",\n" +
-                        "\"protocol\" : {\n" +
-                        "\"@id\" : \"https://w3id.org/idsa/code/HTTP\"\n" +
-                        "},\n" +
-                        "\"accessUrl\" : \"http://fokus.fraunhofer.de/odc\",\n" +
-                        "\"@id\" : \"https://w3id.org/idsa/autogen/host/144354dc-4747-438b-b194-721710d924a4\"\n" +
-                        "} ]\n" +
-                        "}", Connector.class);
-        Future<DCATTransformerService> future = Future.future();
-        Future<String> jFuture = Future.future();
-        DCATTransformerServiceImpl t = new DCATTransformerServiceImpl(future.completer());
-        t.transformCatalogue(Json.encode(c), jFuture.completer());
+    private void checkNull(Object object, Property property,org.apache.jena.rdf.model.Resource resource ){
+        if (object!=null){
+            resource.addProperty(property, String.valueOf(object));
+        }
     }
 }

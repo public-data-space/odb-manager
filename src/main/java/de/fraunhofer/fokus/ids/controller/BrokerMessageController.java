@@ -31,7 +31,7 @@ public class BrokerMessageController {
         this.databaseService = DatabaseService.createProxy(vertx, "databaseService");
     }
 
-    public void getData (String input, Handler<AsyncResult<Void>> readyHandler){
+    public void getData (String input, Handler<AsyncResult<String>> readyHandler){
         ConnectorNotificationMessage header = IDSMessageParser.getHeader(input);
         Connector connector = IDSMessageParser.getBody(input);
         try {
@@ -46,11 +46,12 @@ public class BrokerMessageController {
             }
         }
         catch (Exception e){
+            e.printStackTrace();
             LOGGER.error("Something went wrong while parsing the IDS message.");
         }
     }
 
-    private void update(Connector connector, Handler<AsyncResult<Void>> readyHandler) {
+    private void update(Connector connector, Handler<AsyncResult<String>> readyHandler) {
         Future<List<JsonObject>> catalogueIdFuture = Future.future();
         databaseService.query(SELECT_STATEMENT, new JsonArray().add("catalogues").add(connector.getId()), cataloguePersistenceReply -> catalogueIdFuture.completer());
         Future<String> catalogueFuture = Future.future();
@@ -73,7 +74,7 @@ public class BrokerMessageController {
                                         }
                                     });
                                 }
-                               readyHandler.handle(Future.succeededFuture());
+                               readyHandler.handle(Future.succeededFuture("Connector successfully updated."));
                            } else {
                             LOGGER.error(dataassetCreateReply.cause());
                             readyHandler.handle(Future.failedFuture(dataassetCreateReply.cause()));
@@ -92,7 +93,7 @@ public class BrokerMessageController {
         });
     }
 
-    private void register(Connector connector, Handler<AsyncResult<Void>> readyHandler) {
+    private void register(Connector connector, Handler<AsyncResult<String>> readyHandler) {
         Future<String> catalogueFuture = Future.future();
         Map<String, Future<String>> datassetFutures = new HashMap<>();
         initTransformations(connector, catalogueFuture, datassetFutures);
@@ -110,7 +111,7 @@ public class BrokerMessageController {
                                     brokerMessageService.createDataSet(datassetFutures.get(datasetExternalId).result(), datasetExternalId, catalogueId, datasetReply -> {});
                                     databaseService.update(INSERT_STATEMENT, new JsonArray().add("datasets").add(Json.decodeValue(datassetFutures.get(datasetExternalId).result(), Resource.class).getId()).add(datasetId), datasetPersistenceReply -> {});
                                 }
-                                readyHandler.handle(Future.succeededFuture());
+                                readyHandler.handle(Future.succeededFuture("Connector successfully registered."));
                             } else {
                                 LOGGER.error(dataassetCreateReply.cause());
                                 readyHandler.handle(Future.failedFuture(dataassetCreateReply.cause()));
@@ -128,7 +129,7 @@ public class BrokerMessageController {
         });
     }
 
-    private void unregister(Connector connector, Handler<AsyncResult<Void>> readyHandler) {
+    private void unregister(Connector connector, Handler<AsyncResult<String>> readyHandler) {
         Future<String> catalogueIdFuture = Future.future();
         databaseService.query(SELECT_STATEMENT, new JsonArray().add("catalogues").add(connector.getId()), cataloguePersistenceReply -> catalogueIdFuture.completer());
 
@@ -151,7 +152,7 @@ public class BrokerMessageController {
                     if (reply.succeeded()) {
                         brokerMessageService.deleteCatalogue(catalogueIdReply.result(), datasetReply -> {
                         });
-                        readyHandler.handle(Future.succeededFuture());
+                        readyHandler.handle(Future.succeededFuture("Connector successfully unregistered."));
                     } else {
                         LOGGER.error(reply.cause());
                     }
@@ -173,4 +174,5 @@ public class BrokerMessageController {
             }
         }
     }
+
 }
