@@ -10,6 +10,11 @@ services:
       - PIVEAU_HUB_PORT=8080
       - PIVEAU_HUB_APIKEY=yourapikey
       - REPOSITORY=/ids/repo/
+      - HOST=postgres
+      - PORT=5432
+      - USER=ids
+      - DATABASE=ids
+      - PASSWORD=ids
     ports:
       - 8092:8080
 
@@ -108,3 +113,21 @@ services:
     ports:
       - 8890:8890
       - 1111:1111
+
+  postgres:
+    image: postgres
+    logging:
+      options:
+        max-size: "50m"
+    ports:
+      - 5433:5432
+    volumes:
+      - ./docker-entrypoint-initdb.d:/docker-entrypoint-initdb.d
+      - odb-manager_database:/var/lib/postgresql/data
+    environment:
+      - POSTGRES_PASSWORD=123456
+      - DATABASE_USER=ids
+      - DATABASE_USER_PW=ids
+
+volumes:
+  odb-manager_database:
