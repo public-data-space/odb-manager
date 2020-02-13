@@ -22,8 +22,10 @@ public class BrokerMessageController {
     private DCATTransformerService dcatTransformerService;
     private DatabaseService databaseService;
 
-    private final static String INSERT_STATEMENT = "INSERT INTO ? values (NOE(),NOW(),?,?)";
-    private final static String SELECT_STATEMENT = "SELECT * FROM ? WHERE external_id=?";
+    private final static String INSERT_CAT_STATEMENT = "INSERT INTO catalogues (created_at, updated_at, external_id, internal_id) values (NOW(),NOW(),?,?)";
+    private final static String INSERT_DS_STATEMENT = "INSERT INTO datasets (created_at, updated_at, external_id, internal_id) values (NOW(),NOW(),?,?)";
+    private final static String SELECT_CAT_STATEMENT = "SELECT * FROM catalogues WHERE external_id=?";
+    private final static String SELECT_DS_STATEMENT = "SELECT * FROM datasets WHERE external_id=?";
 
     public BrokerMessageController(Vertx vertx) {
         this.brokerMessageService = BrokerMessageService.createProxy(vertx,"brokerMessageService");
@@ -53,7 +55,7 @@ public class BrokerMessageController {
 
     private void update(Connector connector, Handler<AsyncResult<String>> readyHandler) {
         Future<List<JsonObject>> catalogueIdFuture = Future.future();
-        databaseService.query(SELECT_STATEMENT, new JsonArray().add("catalogues").add(connector.getId()), cataloguePersistenceReply -> catalogueIdFuture.completer());
+        databaseService.query(SELECT_CAT_STATEMENT, new JsonArray().add(connector.getId().toString()), cataloguePersistenceReply -> catalogueIdFuture.completer());
         Future<String> catalogueFuture = Future.future();
         java.util.Map<String, Future<String>> datassetFutures = new HashMap<>();
         initTransformations(connector, catalogueFuture, datassetFutures);
@@ -65,9 +67,9 @@ public class BrokerMessageController {
                         CompositeFuture.all(new ArrayList<>(datassetFutures.values())).setHandler(dataassetCreateReply -> {
                            if(dataassetCreateReply.succeeded()){
                                 for(String dataassetId: datassetFutures.keySet()) {
-                                    databaseService.query(SELECT_STATEMENT, new JsonArray().add("datasets").add(dataassetId), datasetPersistenceReply -> {
+                                    databaseService.query(SELECT_DS_STATEMENT, new JsonArray().add(dataassetId), datasetPersistenceReply -> {
                                         if (datasetPersistenceReply.succeeded()) {
-                                            brokerMessageService.createDataSet(datassetFutures.get(dataassetId).result(), datasetPersistenceReply.result().get(0).getString("internal_id"), catalogueIdFuture.result().get(0).getString("external_id"), datasetReply -> {
+                                            brokerMessageService.createDataSet(datassetFutures.get(dataassetId).result(), datasetPersistenceReply.result().get(0).getString("internal_id"), catalogueIdFuture.result().get(0).getString("internal_id"), datasetReply -> {
                                             });
                                         } else {
 
@@ -103,13 +105,13 @@ public class BrokerMessageController {
                 String catalogueId = UUID.randomUUID().toString();
                 brokerMessageService.createCatalogue(reply.result(), catalogueId, catalogueReply -> {
                     if (catalogueReply.succeeded()) {
-                        databaseService.update(INSERT_STATEMENT, new JsonArray().add("catalogues").add(connector.getId()).add(catalogueId), cataloguePersistenceReply -> {});
+                        databaseService.update(INSERT_CAT_STATEMENT, new JsonArray().add(connector.getId().toString()).add(catalogueId), cataloguePersistenceReply -> {});
                         CompositeFuture.all(new ArrayList<>(datassetFutures.values())).setHandler( dataassetCreateReply -> {
                             if(dataassetCreateReply.succeeded()){
                                 for(String datasetExternalId : datassetFutures.keySet()){
                                     String datasetId = UUID.randomUUID().toString();
                                     brokerMessageService.createDataSet(datassetFutures.get(datasetExternalId).result(), datasetExternalId, catalogueId, datasetReply -> {});
-                                    databaseService.update(INSERT_STATEMENT, new JsonArray().add("datasets").add(Json.decodeValue(datassetFutures.get(datasetExternalId).result(), Resource.class).getId()).add(datasetId), datasetPersistenceReply -> {});
+                                    databaseService.update(INSERT_DS_STATEMENT, new JsonArray().add(Json.decodeValue(datassetFutures.get(datasetExternalId).result(), Resource.class).getId().toString()).add(datasetId), datasetPersistenceReply -> {});
                                 }
                                 readyHandler.handle(Future.succeededFuture("Connector successfully registered."));
                             } else {
@@ -131,14 +133,14 @@ public class BrokerMessageController {
 
     private void unregister(Connector connector, Handler<AsyncResult<String>> readyHandler) {
         Future<String> catalogueIdFuture = Future.future();
-        databaseService.query(SELECT_STATEMENT, new JsonArray().add("catalogues").add(connector.getId()), cataloguePersistenceReply -> catalogueIdFuture.completer());
+        databaseService.query(SELECT_CAT_STATEMENT, new JsonArray().add(connector.getId().toString()), cataloguePersistenceReply -> catalogueIdFuture.completer());
 
         catalogueIdFuture.setHandler(catalogueIdReply -> {
             if(catalogueIdReply.succeeded()) {
                 List<Future> datasetDeleteFutures = new ArrayList<>();
 
                 for (Resource dataasset : connector.getCatalog().getOffer()) {
-                    databaseService.query(SELECT_STATEMENT, new JsonArray().add("dataset").add(dataasset.getId()), datasetIdreply -> {
+                    databaseService.query(SELECT_DS_STATEMENT, new JsonArray().add(dataasset.getId().toString()), datasetIdreply -> {
                         if (datasetIdreply.succeeded()) {
                             Future datasetDeleteFuture = Future.future();
                             datasetDeleteFutures.add(datasetDeleteFuture);
