@@ -38,10 +38,13 @@ public class BrokerMessageController {
         Connector connector = IDSMessageParser.getBody(input);
         try {
             if (header instanceof ConnectorAvailableMessage) {
+                LOGGER.info("AvailableMessage received.");
                 register(connector, readyHandler);
             } else if (header instanceof ConnectorUnavailableMessage) {
+                LOGGER.info("UnavailableMessage received.");
                 unregister(connector, readyHandler);
             } else if (header instanceof ConnectorUpdateMessage) {
+                LOGGER.info("UpdateMessage received.");
                 update(connector, readyHandler);
             } else {
                 LOGGER.error("Invalid message signature.");
@@ -132,35 +135,39 @@ public class BrokerMessageController {
     }
 
     private void unregister(Connector connector, Handler<AsyncResult<String>> readyHandler) {
-        Future<String> catalogueIdFuture = Future.future();
-        databaseService.query(SELECT_CAT_STATEMENT, new JsonArray().add(connector.getId().toString()), cataloguePersistenceReply -> catalogueIdFuture.completer());
-
-        catalogueIdFuture.setHandler(catalogueIdReply -> {
-            if(catalogueIdReply.succeeded()) {
+        databaseService.query(SELECT_CAT_STATEMENT, new JsonArray().add(connector.getId().toString()), cataloguePersistenceReply -> {
+            if(cataloguePersistenceReply.succeeded()) {
+                String catalogueInternalId = cataloguePersistenceReply.result().get(0).getString("internal_id");
+                LOGGER.info("internal ID resolved: " + catalogueInternalId);
                 List<Future> datasetDeleteFutures = new ArrayList<>();
 
                 for (Resource dataasset : connector.getCatalog().getOffer()) {
                     databaseService.query(SELECT_DS_STATEMENT, new JsonArray().add(dataasset.getId().toString()), datasetIdreply -> {
-                        if (datasetIdreply.succeeded()) {
+                        if (datasetIdreply.succeeded() && !datasetIdreply.result().isEmpty()) {
                             Future datasetDeleteFuture = Future.future();
                             datasetDeleteFutures.add(datasetDeleteFuture);
-                            brokerMessageService.deleteDataSet(datasetIdreply.result().get(0).getString("internal_id"), catalogueIdReply.result(), datasetDeleteFuture.completer());
+                            String datasetInternalId = datasetIdreply.result().get(0).getString("internal_id");
+                            brokerMessageService.deleteDataSet(datasetInternalId, catalogueInternalId, datasetDeleteFuture.completer());
                         } else {
-
+                            LOGGER.error(datasetIdreply.cause());
+                            readyHandler.handle(Future.failedFuture(datasetIdreply.cause()));
                         }
                     });
                 }
+                LOGGER.info("Datasets deleted: " +datasetDeleteFutures.size());
                 CompositeFuture.all(datasetDeleteFutures).setHandler(reply -> {
                     if (reply.succeeded()) {
-                        brokerMessageService.deleteCatalogue(catalogueIdReply.result(), datasetReply -> {
+                        brokerMessageService.deleteCatalogue(catalogueInternalId, datasetReply -> {
                         });
                         readyHandler.handle(Future.succeededFuture("Connector successfully unregistered."));
                     } else {
                         LOGGER.error(reply.cause());
+                        readyHandler.handle(Future.failedFuture(reply.cause()));
                     }
                 });
             } else {
-
+                LOGGER.error(cataloguePersistenceReply.cause());
+                readyHandler.handle(Future.failedFuture(cataloguePersistenceReply.cause()));
             }
     });
     }

@@ -41,8 +41,8 @@ public class DCATTransformerServiceImpl implements DCATTransformerService {
 
         catalogue.addProperty(DCTerms.publisher, publisher);
 
-        addPLainLiterals(catalogue, connector.getTitle(), DCTerms.title);
-        addPLainLiterals(catalogue, connector.getDescription(), DCTerms.description);
+        addPLainLiterals(catalogue, connector.getTitle(), DCTerms.title, model);
+        addPLainLiterals(catalogue, connector.getDescription(), DCTerms.description, model);
 
         try(ByteArrayOutputStream baos = new ByteArrayOutputStream()){
             model.write(baos, "TTL");
@@ -69,7 +69,7 @@ public class DCATTransformerServiceImpl implements DCATTransformerService {
 
         checkNull(dataasset.getStandardLicense(),DCTerms.license,dataset);
         checkNull(dataasset.getVersion(),DCTerms.hasVersion,dataset);
-        addPLainLiterals(dataset, dataasset.getKeyword(),DCAT.keyword);
+        addPLainLiterals(dataset, dataasset.getKeyword(),DCAT.keyword, model);
 
         if (dataasset.getTheme()!=null){
             for (URI uri:dataasset.getTheme()){
@@ -87,8 +87,8 @@ public class DCATTransformerServiceImpl implements DCATTransformerService {
                 dataset.addLiteral(DCTerms.language, language.toString());
             }
         }
-        addPLainLiterals(dataset, dataasset.getTitle(), DCTerms.title);
-        addPLainLiterals(dataset, dataasset.getDescription(), DCTerms.description);
+        addPLainLiterals(dataset, dataasset.getTitle(), DCTerms.title, model);
+        addPLainLiterals(dataset, dataasset.getDescription(), DCTerms.description, model);
 
         StaticEndpoint endpoint = (StaticEndpoint) dataasset.getResourceEndpoint().get(0);
 
@@ -111,10 +111,10 @@ public class DCATTransformerServiceImpl implements DCATTransformerService {
         return this;
     }
 
-    private void addPLainLiterals(org.apache.jena.rdf.model.Resource resource, ArrayList<? extends PlainLiteral> list, Property relation){
+    private void addPLainLiterals(org.apache.jena.rdf.model.Resource resource, ArrayList<? extends PlainLiteral> list, Property relation, Model model){
         if(list != null) {
             for (PlainLiteral literal : list) {
-                resource.addLiteral(relation, literal.getValue());
+                resource.addLiteral(relation,model.createLiteral(literal.getValue(), "en"));
             }
         }
     }
