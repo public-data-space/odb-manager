@@ -107,6 +107,7 @@ public class BrokerMessageController {
         });
     }
 
+
     private void update2(Connector connector, Handler<AsyncResult<String>> readyHandler) {
         databaseService.query(SELECT_CAT_STATEMENT, new JsonArray().add(connector.getId().toString()), cataloguePersistenceReply -> {
             if (cataloguePersistenceReply.succeeded()){
@@ -123,17 +124,18 @@ public class BrokerMessageController {
                                 CompositeFuture.all(new ArrayList<>(datassetFutures.values())).setHandler(dataassetCreateReply -> {
                                     if(dataassetCreateReply.succeeded()){
 
-                                        for(String dataassetId: datassetFutures.keySet()) {
-                                            databaseService.query(SELECT_DS_STATEMENT, new JsonArray().add(dataassetId), datasetPersistenceReply -> {
-                                                String datId =datasetPersistenceReply.result().get(0).getString("internal_id");
+                                        for(String dataassetIdExternal: datassetFutures.keySet()) {
+                                            databaseService.query(SELECT_DS_STATEMENT, new JsonArray().add(dataassetIdExternal), datasetPersistenceReply -> {
                                                 if (datasetPersistenceReply.succeeded()) {
-                                                    brokerMessageService.createDataSet(datassetFutures.get(dataassetId).result(),datId ,catalogueInternalId , datasetReply -> {
-                                                        if(datasetReply.succeeded()){
-                                                            databaseService.update(INSERT_DS_STATEMENT, new JsonArray().add(dataassetId).add(datasetPersistenceReply.result().get(0).getString("internal_id")), datasetPersistenceReply2 -> {});
-                                                        } else {
-                                                            LOGGER.error(datasetReply.cause());
-                                                        }
-                                                    });
+
+                                                    if (datasetPersistenceReply.result().size()!=0) {
+                                                        String datId =datasetPersistenceReply.result().get(0).getString("internal_id");
+                                                        createDataSet(datassetFutures,dataassetIdExternal,datId,catalogueInternalId);
+                                                    }
+                                                    else{
+                                                        String datId = UUID.randomUUID().toString();
+                                                        createDataSet(datassetFutures,dataassetIdExternal,datId,catalogueInternalId);
+                                                    }
                                                 } else {
                                                     LOGGER.error(datasetPersistenceReply.cause());
                                                 }
@@ -165,6 +167,16 @@ public class BrokerMessageController {
         });
     }
 
+    private void createDataSet(Map<String, Future<String>> datassetFutures,String datasetExternalId,String dataSetId ,  String catalogueId ) {
+        brokerMessageService.createDataSet(datassetFutures.get(datasetExternalId).result(),dataSetId ,catalogueId , datasetReply -> {
+            if(datasetReply.succeeded()){
+                databaseService.update(INSERT_DS_STATEMENT, new JsonArray().add(datasetExternalId).add(dataSetId), datasetPersistenceReply2 -> {});
+            } else {
+                LOGGER.error(datasetReply.cause());
+            }
+        });
+    }
+
     private void register(Connector connector, Handler<AsyncResult<String>> readyHandler) {
         Future<String> catalogueFuture = Future.future();
         Map<String, Future<String>> datassetFutures = new HashMap<>();
@@ -180,13 +192,7 @@ public class BrokerMessageController {
                             if(dataassetCreateReply.succeeded()){
                                 for(String datasetExternalId : datassetFutures.keySet()){
                                     String datasetId = UUID.randomUUID().toString();
-                                    brokerMessageService.createDataSet(datassetFutures.get(datasetExternalId).result(), datasetId, catalogueId, datasetReply -> {
-                                        if(datasetReply.succeeded()){
-                                            databaseService.update(INSERT_DS_STATEMENT, new JsonArray().add(datasetExternalId).add(datasetId), datasetPersistenceReply -> {});
-                                        } else {
-                                            LOGGER.error(datasetReply.cause());
-                                        }
-                                    });
+                                    createDataSet(datassetFutures,datasetExternalId,datasetId,catalogueId);
                                 }
                                 readyHandler.handle(Future.succeededFuture("Connector successfully registered."));
                             } else {
