@@ -88,7 +88,7 @@ public class MainVerticle extends AbstractVerticle {
         router.post("/data").handler(routingContext -> brokerMessageController.getData(routingContext.getBodyAsString(),
                 reply -> reply(reply, routingContext.response())));
         LOGGER.info("Starting odb manager ");
-        server.requestHandler(router).listen(8080);
+        server.requestHandler(router).listen(8092);
         LOGGER.info("odb-manager deployed on port "+8080);
     }
 

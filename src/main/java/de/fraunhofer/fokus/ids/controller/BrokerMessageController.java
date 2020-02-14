@@ -11,6 +11,7 @@ import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 import io.vertx.core.logging.Logger;
 import io.vertx.core.logging.LoggerFactory;
+import org.apache.jena.base.Sys;
 
 import java.util.*;
 import java.util.List;
@@ -26,6 +27,9 @@ public class BrokerMessageController {
     private final static String INSERT_DS_STATEMENT = "INSERT INTO datasets (created_at, updated_at, external_id, internal_id) values (NOW(),NOW(),?,?)";
     private final static String SELECT_CAT_STATEMENT = "SELECT * FROM catalogues WHERE external_id=?";
     private final static String SELECT_DS_STATEMENT = "SELECT * FROM datasets WHERE external_id=?";
+    private static final String DELETE_DS_UPDATE = "DELETE FROM datasets WHERE internal_id = ?";
+    private final static String DELETE_CAT_STATEMENT = "DELETE FROM catalogues WHERE internal_id = ?";
+
 
     public BrokerMessageController(Vertx vertx) {
         this.brokerMessageService = BrokerMessageService.createProxy(vertx,"brokerMessageService");
@@ -119,9 +123,7 @@ public class BrokerMessageController {
                                         } else {
                                             LOGGER.error(datasetReply.cause());
                                         }
-
                                     });
-
                                 }
                                 readyHandler.handle(Future.succeededFuture("Connector successfully registered."));
                             } else {
@@ -144,7 +146,12 @@ public class BrokerMessageController {
     private void unregister(Connector connector, Handler<AsyncResult<String>> readyHandler) {
         databaseService.query(SELECT_CAT_STATEMENT, new JsonArray().add(connector.getId().toString()), cataloguePersistenceReply -> {
             if(cataloguePersistenceReply.succeeded()) {
+                for (JsonObject jsonObject : cataloguePersistenceReply.result()){
+                    System.out.println("Catalogue : "+jsonObject);
+
+                }
                 String catalogueInternalId = cataloguePersistenceReply.result().get(0).getString("internal_id");
+                String catalogueExternalId = cataloguePersistenceReply.result().get(0).getString("external_id");
                 LOGGER.info("internal ID resolved: " + catalogueInternalId);
                 List<Future> datasetDeleteFutures = new ArrayList<>();
 
@@ -154,7 +161,17 @@ public class BrokerMessageController {
                             Future datasetDeleteFuture = Future.future();
                             datasetDeleteFutures.add(datasetDeleteFuture);
                             String datasetInternalId = datasetIdreply.result().get(0).getString("internal_id");
-                            brokerMessageService.deleteDataSet(datasetInternalId, catalogueInternalId, datasetDeleteFuture.completer());
+                            brokerMessageService.deleteDataSet(datasetInternalId, catalogueInternalId, deleteAsset ->{
+                                if (deleteAsset.succeeded()){
+                                    databaseService.update(DELETE_DS_UPDATE,new JsonArray().add(datasetInternalId),reply ->{
+                                        if (reply.failed()) {
+                                            LOGGER.error(reply.cause());
+                                        } else {
+                                            LOGGER.info("DataAsset From Database succeeded deleted");
+                                        }
+                                    });
+                                }
+                            });
                         } else {
                             LOGGER.error(datasetIdreply.cause());
                             readyHandler.handle(Future.failedFuture(datasetIdreply.cause()));
@@ -165,6 +182,18 @@ public class BrokerMessageController {
                 CompositeFuture.all(datasetDeleteFutures).setHandler(reply -> {
                     if (reply.succeeded()) {
                         brokerMessageService.deleteCatalogue(catalogueInternalId, datasetReply -> {
+                            if (datasetReply.succeeded()){
+                                databaseService.update(DELETE_CAT_STATEMENT,new JsonArray().add(catalogueInternalId),reply2 ->{
+                                    if (reply2.failed()) {
+                                        LOGGER.error(reply2.cause());
+                                    } else {
+                                        LOGGER.info("Catalogue From Database succeeded deleted");
+                                    }
+                                });
+                            }
+                            else{
+                                LOGGER.error(datasetReply.cause());
+                            }
                         });
                         readyHandler.handle(Future.succeededFuture("Connector successfully unregistered."));
                     } else {
