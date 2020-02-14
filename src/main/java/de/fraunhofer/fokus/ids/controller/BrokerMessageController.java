@@ -113,8 +113,15 @@ public class BrokerMessageController {
                             if(dataassetCreateReply.succeeded()){
                                 for(String datasetExternalId : datassetFutures.keySet()){
                                     String datasetId = UUID.randomUUID().toString();
-                                    brokerMessageService.createDataSet(datassetFutures.get(datasetExternalId).result(), datasetExternalId, catalogueId, datasetReply -> {});
-                                    databaseService.update(INSERT_DS_STATEMENT, new JsonArray().add(Json.decodeValue(datassetFutures.get(datasetExternalId).result(), Resource.class).getId().toString()).add(datasetId), datasetPersistenceReply -> {});
+                                    brokerMessageService.createDataSet(datassetFutures.get(datasetExternalId).result(), datasetId, catalogueId, datasetReply -> {
+                                        if(datasetReply.succeeded()){
+                                            databaseService.update(INSERT_DS_STATEMENT, new JsonArray().add(datasetExternalId).add(datasetId), datasetPersistenceReply -> {});
+                                        } else {
+                                            LOGGER.error(datasetReply.cause());
+                                        }
+
+                                    });
+
                                 }
                                 readyHandler.handle(Future.succeededFuture("Connector successfully registered."));
                             } else {
