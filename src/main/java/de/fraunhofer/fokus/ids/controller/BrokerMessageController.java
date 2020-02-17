@@ -6,20 +6,11 @@ import de.fraunhofer.fokus.ids.services.dcatTransformerService.DCATTransformerSe
 import de.fraunhofer.fokus.ids.utils.IDSMessageParser;
 import de.fraunhofer.iais.eis.*;
 import io.vertx.core.*;
-import io.vertx.core.buffer.Buffer;
 import io.vertx.core.json.Json;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 import io.vertx.core.logging.Logger;
 import io.vertx.core.logging.LoggerFactory;
-import org.apache.jena.base.Sys;
-import org.apache.jena.query.QuerySolution;
-import org.apache.jena.query.ResultSet;
-import org.apache.jena.query.ResultSetFactory;
-import org.apache.jena.sparql.vocabulary.FOAF;
-import org.apache.jena.vocabulary.DCTerms;
-
-import java.io.ByteArrayInputStream;
 import java.util.*;
 import java.util.List;
 import java.util.Map;
@@ -123,89 +114,111 @@ public class BrokerMessageController {
                 Future<String> catalogueFuture = Future.future();
                 Map<String, Future<String>> datassetFutures = new HashMap<>();
                 initTransformations(connector, catalogueFuture, datassetFutures);
-
-                Set<String> listOfExternalId = new HashSet<String>();
-                if (connector.getCatalog().getOffer().size()==0){
-                    Set<String> finalListOfExternalId1 = listOfExternalId;
-                    databaseService.query(SELECT_ALL_DS_STATEMENT,new JsonArray(), allreply -> {
-                        if (allreply.succeeded()){
-                            for (JsonObject jsonObject: allreply.result()){
-                                finalListOfExternalId1.add(jsonObject.getString("external_id"));
-                            }
-                        }
-                    });
-                }
-                else {
-                    listOfExternalId = datassetFutures.keySet();
-                }
-
-                Set<String> finalListOfExternalId = listOfExternalId;
                 catalogueFuture.setHandler(reply -> {
-                    if(reply.succeeded()) {
+                    if (reply.succeeded()){
                         brokerMessageService.createCatalogue(catalogueFuture.result(), catalogueInternalId, catalogueReply -> {
                             if (catalogueReply.succeeded()) {
                                 CompositeFuture.all(new ArrayList<>(datassetFutures.values())).setHandler(dataassetCreateReply -> {
                                     if(dataassetCreateReply.succeeded()){
-                                        for(String dataassetIdExternal: finalListOfExternalId) {
-                                            databaseService.query(SELECT_DS_STATEMENT, new JsonArray().add(dataassetIdExternal), datasetPersistenceReply -> {
-                                                if (datasetPersistenceReply.succeeded()) {
-                                                    if (datasetPersistenceReply.result().size()!=0) {
-                                                        String datId =datasetPersistenceReply.result().get(0).getString("internal_id");
-                                                        brokerMessageService.getAllDatasetsOfCatalogue(catalogueInternalId,jsonReply ->{
-                                                          for (Object jsonObject:jsonReply.result().getJsonArray("@graph")) {
-                                                              JsonObject dataAsset = (JsonObject) jsonObject;
-                                                              String idString = dataAsset.getString("@id");
-                                                              String containsString = "https://ids.fokus.fraunhofer.de/set/data/";
-                                                              if (idString.toLowerCase().contains(containsString.toLowerCase())){
-                                                                  String dataAssetId = idString.substring(containsString.length());
-                                                                  if (datId.equals(dataAssetId)){
-                                                                      if (datassetFutures.size()==0){
-                                                                          brokerMessageService.deleteDataSet(dataAssetId,catalogueInternalId,deleteReply ->{});
-                                                                      }
-                                                                      else{
-                                                                          createDataSet(datassetFutures,dataassetIdExternal,dataAssetId,catalogueInternalId);
-                                                                      }
-                                                                  }
-                                                              }
-                                                          }
-                                                        });
+                                        if (datassetFutures.isEmpty()){
+                                            brokerMessageService.getAllDatasetsOfCatalogue(catalogueInternalId,jsonReply ->{
+                                                for (Object jsonObject:jsonReply.result().getJsonArray("@graph")) {
+                                                    JsonObject dataAsset = (JsonObject) jsonObject;
+                                                    String idString = dataAsset.getString("@id");
+                                                    String containsString = "https://ids.fokus.fraunhofer.de/set/data/";
+                                                    if (idString.toLowerCase().contains(containsString.toLowerCase())){
+                                                        String dataAssetId = idString.substring(containsString.length());
+                                                       brokerMessageService.deleteDataSet(dataAssetId,catalogueInternalId,deleteHandler->{
+                                                           if (deleteHandler.succeeded()){
+                                                               LOGGER.info("Update succeeded");
+                                                           }
+                                                           else{
+                                                               LOGGER.error("Delete failure!");
+                                                           }
+                                                       });
                                                     }
-                                                    else{
-                                                        String datId = UUID.randomUUID().toString();
-                                                        createDataSet(datassetFutures,dataassetIdExternal,datId,catalogueInternalId);
-                                                    }
-                                                } else {
-                                                    LOGGER.error(datasetPersistenceReply.cause());
                                                 }
                                             });
+                                            readyHandler.handle(Future.succeededFuture("Connector successfully updated."));
                                         }
-                                        readyHandler.handle(Future.succeededFuture("Connector successfully updated."));
-                                    } else {
+                                        else{
+                                            for(String dataassetIdExternal: datassetFutures.keySet()) {
+                                                databaseService.query(SELECT_DS_STATEMENT, new JsonArray().add(dataassetIdExternal), datasetPersistenceReply -> {
+                                                    if (datasetPersistenceReply.succeeded()) {
+                                                        if (datasetPersistenceReply.result().size()!=0) {
+                                                            dataAssetIdsOfCatalogue(catalogueInternalId,r -> {
+                                                                ArrayList<String> listOfIds = r.result();
+                                                                for (JsonObject object : datasetPersistenceReply.result()){
+                                                                        for (String s : listOfIds) {
+                                                                            if (s.equals(object.getString("internal_id"))){
+                                                                                createDataSet(datassetFutures,dataassetIdExternal,s,catalogueInternalId);
+                                                                                break;
+                                                                            }
+                                                                        }
+                                                                }
+                                                            });
+                                                        }
+                                                        else{
+                                                            String datId = UUID.randomUUID().toString();
+                                                            createDataSet(datassetFutures,dataassetIdExternal,datId,catalogueInternalId);
+                                                        }
+                                                    } else {
+                                                        LOGGER.error(datasetPersistenceReply.cause());
+                                                    }
+                                                });
+                                            }
+                                            readyHandler.handle(Future.succeededFuture("Connector successfully updated."));
+                                        }
+
+                                    }
+                                    else {
                                         LOGGER.error(dataassetCreateReply.cause());
                                         readyHandler.handle(Future.failedFuture(dataassetCreateReply.cause()));
                                     }
                                 });
-                            } else {
+                            }
+                            else {
                                 LOGGER.error(catalogueReply.cause());
                                 readyHandler.handle(Future.failedFuture(catalogueReply.cause()));
-
                             }
                         });
-                    } else {
+                    }
+                    else {
                         LOGGER.error(reply.cause());
                         readyHandler.handle(Future.failedFuture(reply.cause()));
                     }
                 });
-
             }
             else{
                 LOGGER.error(cataloguePersistenceReply.cause());
             }
+            });
+        }
 
-        });
-    }
+        private void dataAssetIdsOfCatalogue (String catalogueInternalId, Handler<AsyncResult<ArrayList<String>>> asyncResultHandler){
+            brokerMessageService.getAllDatasetsOfCatalogue(catalogueInternalId,jsonReply ->{
+                if (jsonReply.succeeded()) {
+                    ArrayList<String> ids = new ArrayList<>();
+                    for (Object jsonObject:jsonReply.result().getJsonArray("@graph")) {
+                        JsonObject dataAsset = (JsonObject) jsonObject;
+                        String idString = dataAsset.getString("@id");
+                        String containsString = "https://ids.fokus.fraunhofer.de/set/data/";
+                        if (idString.toLowerCase().contains(containsString.toLowerCase())){
+                            String dataAssetId = idString.substring(containsString.length());
+                            ids.add(dataAssetId);
+                        }
+                    }
+                    asyncResultHandler.handle(Future.succeededFuture(ids));
 
-    private void createDataSet(Map<String, Future<String>> datassetFutures,String datasetExternalId,String dataSetId ,  String catalogueId ) {
+                }
+                else {
+                    LOGGER.error("Can not get Ids of Catalogue");
+                    asyncResultHandler.handle(Future.failedFuture(jsonReply.cause()));
+
+                }
+            });
+        }
+        private void createDataSet(Map<String, Future<String>> datassetFutures,String datasetExternalId,String dataSetId ,  String catalogueId ) {
         brokerMessageService.createDataSet(datassetFutures.get(datasetExternalId).result(),dataSetId ,catalogueId , datasetReply -> {
             if(datasetReply.succeeded()){
                 databaseService.update(INSERT_DS_STATEMENT, new JsonArray().add(datasetExternalId).add(dataSetId), datasetPersistenceReply2 -> {});
