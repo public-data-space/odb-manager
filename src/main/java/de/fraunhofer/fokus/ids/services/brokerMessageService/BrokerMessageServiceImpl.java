@@ -72,6 +72,21 @@ public class BrokerMessageServiceImpl implements BrokerMessageService{
                 });
     }
 
+    private void get(int port, String host, String path, Handler<AsyncResult<JsonObject>> resultHandler) {
+
+        webClient
+                .get(port, host, path)
+                .putHeader("Accept", "application/json")
+                .send(ar -> {
+                    if (ar.succeeded()) {
+                        resultHandler.handle(Future.succeededFuture(ar.result().bodyAsJsonObject()));
+                    } else {
+                        LOGGER.error(ar.cause());
+                        resultHandler.handle(Future.failedFuture(ar.cause()));
+                    }
+                });
+    }
+
     @Override
     public BrokerMessageService createCatalogue(String body, String id, Handler<AsyncResult<BrokerMessageService>> readyHandler) {
         put(piveauPort,piveauHost,"/catalogues/"+id, body, jsonObjectAsyncResult -> {
@@ -100,6 +115,19 @@ public class BrokerMessageServiceImpl implements BrokerMessageService{
                 readyHandler.handle(Future.failedFuture(jsonObjectAsyncResult.cause()));
             }
 
+        });
+        return this;
+    }
+
+    @Override
+    public BrokerMessageService getAllDatasetsOfCatalogue(String catalogueId ,Handler<AsyncResult<JsonObject>> readyHandler) {
+        get(piveauPort,piveauHost,"/datasets?catalogue="+catalogueId, jsonObjectAsyncResult -> {
+            if(jsonObjectAsyncResult.succeeded()) {
+                readyHandler.handle(Future.succeededFuture(jsonObjectAsyncResult.result()));   }
+            else {
+                LOGGER.error(jsonObjectAsyncResult.cause());
+                readyHandler.handle(Future.failedFuture(jsonObjectAsyncResult.cause()));
+            }
         });
         return this;
     }

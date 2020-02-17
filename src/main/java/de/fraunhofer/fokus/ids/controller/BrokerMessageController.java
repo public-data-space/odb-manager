@@ -6,13 +6,20 @@ import de.fraunhofer.fokus.ids.services.dcatTransformerService.DCATTransformerSe
 import de.fraunhofer.fokus.ids.utils.IDSMessageParser;
 import de.fraunhofer.iais.eis.*;
 import io.vertx.core.*;
+import io.vertx.core.buffer.Buffer;
 import io.vertx.core.json.Json;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 import io.vertx.core.logging.Logger;
 import io.vertx.core.logging.LoggerFactory;
 import org.apache.jena.base.Sys;
+import org.apache.jena.query.QuerySolution;
+import org.apache.jena.query.ResultSet;
+import org.apache.jena.query.ResultSetFactory;
+import org.apache.jena.sparql.vocabulary.FOAF;
+import org.apache.jena.vocabulary.DCTerms;
 
+import java.io.ByteArrayInputStream;
 import java.util.*;
 import java.util.List;
 import java.util.Map;
@@ -27,9 +34,9 @@ public class BrokerMessageController {
     private final static String INSERT_DS_STATEMENT = "INSERT INTO datasets (created_at, updated_at, external_id, internal_id) values (NOW(),NOW(),?,?)";
     private final static String SELECT_CAT_STATEMENT = "SELECT * FROM catalogues WHERE external_id=?";
     private final static String SELECT_DS_STATEMENT = "SELECT * FROM datasets WHERE external_id=?";
+    private final static String SELECT_ALL_DS_STATEMENT = "SELECT * FROM datasets";
     private static final String DELETE_DS_UPDATE = "DELETE FROM datasets WHERE internal_id = ?";
     private final static String DELETE_CAT_STATEMENT = "DELETE FROM catalogues WHERE internal_id = ?";
-
 
     public BrokerMessageController(Vertx vertx) {
         this.brokerMessageService = BrokerMessageService.createProxy(vertx,"brokerMessageService");
@@ -107,7 +114,6 @@ public class BrokerMessageController {
         });
     }
 
-
     private void update2(Connector connector, Handler<AsyncResult<String>> readyHandler) {
         databaseService.query(SELECT_CAT_STATEMENT, new JsonArray().add(connector.getId().toString()), cataloguePersistenceReply -> {
             if (cataloguePersistenceReply.succeeded()){
@@ -117,20 +123,52 @@ public class BrokerMessageController {
                 Future<String> catalogueFuture = Future.future();
                 Map<String, Future<String>> datassetFutures = new HashMap<>();
                 initTransformations(connector, catalogueFuture, datassetFutures);
-                catalogueFuture.setHandler( reply -> {
+
+                Set<String> listOfExternalId = new HashSet<String>();
+                if (connector.getCatalog().getOffer().size()==0){
+                    Set<String> finalListOfExternalId1 = listOfExternalId;
+                    databaseService.query(SELECT_ALL_DS_STATEMENT,new JsonArray(), allreply -> {
+                        if (allreply.succeeded()){
+                            for (JsonObject jsonObject: allreply.result()){
+                                finalListOfExternalId1.add(jsonObject.getString("external_id"));
+                            }
+                        }
+                    });
+                }
+                else {
+                    listOfExternalId = datassetFutures.keySet();
+                }
+
+                Set<String> finalListOfExternalId = listOfExternalId;
+                catalogueFuture.setHandler(reply -> {
                     if(reply.succeeded()) {
                         brokerMessageService.createCatalogue(catalogueFuture.result(), catalogueInternalId, catalogueReply -> {
                             if (catalogueReply.succeeded()) {
                                 CompositeFuture.all(new ArrayList<>(datassetFutures.values())).setHandler(dataassetCreateReply -> {
                                     if(dataassetCreateReply.succeeded()){
-
-                                        for(String dataassetIdExternal: datassetFutures.keySet()) {
+                                        for(String dataassetIdExternal: finalListOfExternalId) {
                                             databaseService.query(SELECT_DS_STATEMENT, new JsonArray().add(dataassetIdExternal), datasetPersistenceReply -> {
                                                 if (datasetPersistenceReply.succeeded()) {
-
                                                     if (datasetPersistenceReply.result().size()!=0) {
                                                         String datId =datasetPersistenceReply.result().get(0).getString("internal_id");
-                                                        createDataSet(datassetFutures,dataassetIdExternal,datId,catalogueInternalId);
+                                                        brokerMessageService.getAllDatasetsOfCatalogue(catalogueInternalId,jsonReply ->{
+                                                          for (Object jsonObject:jsonReply.result().getJsonArray("@graph")) {
+                                                              JsonObject dataAsset = (JsonObject) jsonObject;
+                                                              String idString = dataAsset.getString("@id");
+                                                              String containsString = "https://ids.fokus.fraunhofer.de/set/data/";
+                                                              if (idString.toLowerCase().contains(containsString.toLowerCase())){
+                                                                  String dataAssetId = idString.substring(containsString.length());
+                                                                  if (datId.equals(dataAssetId)){
+                                                                      if (datassetFutures.size()==0){
+                                                                          brokerMessageService.deleteDataSet(dataAssetId,catalogueInternalId,deleteReply ->{});
+                                                                      }
+                                                                      else{
+                                                                          createDataSet(datassetFutures,dataassetIdExternal,dataAssetId,catalogueInternalId);
+                                                                      }
+                                                                  }
+                                                              }
+                                                          }
+                                                        });
                                                     }
                                                     else{
                                                         String datId = UUID.randomUUID().toString();
