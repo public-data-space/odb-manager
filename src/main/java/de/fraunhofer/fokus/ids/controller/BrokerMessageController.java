@@ -121,21 +121,17 @@ public class BrokerMessageController {
                                 CompositeFuture.all(new ArrayList<>(datassetFutures.values())).setHandler(dataassetCreateReply -> {
                                     if(dataassetCreateReply.succeeded()){
                                         if (datassetFutures.isEmpty()){
-                                            brokerMessageService.getAllDatasetsOfCatalogue(catalogueInternalId,jsonReply ->{
-                                                for (Object jsonObject:jsonReply.result().getJsonArray("@graph")) {
-                                                    JsonObject dataAsset = (JsonObject) jsonObject;
-                                                    String idString = dataAsset.getString("@id");
-                                                    String containsString = "https://ids.fokus.fraunhofer.de/set/data/";
-                                                    if (idString.toLowerCase().contains(containsString.toLowerCase())){
-                                                        String dataAssetId = idString.substring(containsString.length());
-                                                       brokerMessageService.deleteDataSet(dataAssetId,catalogueInternalId,deleteHandler->{
-                                                           if (deleteHandler.succeeded()){
-                                                               LOGGER.info("Update succeeded");
-                                                           }
-                                                           else{
-                                                               LOGGER.error("Delete failure!");
-                                                           }
-                                                       });
+                                            dataAssetIdsOfCatalogue(catalogueInternalId,arrayListAsyncResult -> {
+                                                if (arrayListAsyncResult.succeeded()){
+                                                    for (String dataAssetId : arrayListAsyncResult.result()){
+                                                        brokerMessageService.deleteDataSet(dataAssetId,catalogueInternalId,deleteHandler->{
+                                                            if (deleteHandler.succeeded()){
+                                                                LOGGER.info("Update succeeded");
+                                                            }
+                                                            else{
+                                                                LOGGER.error("Delete failure!");
+                                                            }
+                                                        });
                                                     }
                                                 }
                                             });
