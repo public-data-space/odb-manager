@@ -11,6 +11,8 @@ import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 import io.vertx.core.logging.Logger;
 import io.vertx.core.logging.LoggerFactory;
+import org.apache.jena.base.Sys;
+
 import java.util.*;
 import java.util.List;
 import java.util.Map;
@@ -25,7 +27,7 @@ public class BrokerMessageController {
     private final static String INSERT_DS_STATEMENT = "INSERT INTO datasets (created_at, updated_at, external_id, internal_id) values (NOW(),NOW(),?,?)";
     private final static String SELECT_CAT_STATEMENT = "SELECT * FROM catalogues WHERE external_id=?";
     private final static String SELECT_DS_STATEMENT = "SELECT * FROM datasets WHERE external_id=?";
-    private final static String SELECT_ALL_DS_STATEMENT = "SELECT * FROM datasets";
+    private final static String SELECT_DS_WITH_INTERNALID_STATEMENT = "SELECT * FROM datasets WHERE internal_id=?";
     private static final String DELETE_DS_UPDATE = "DELETE FROM datasets WHERE internal_id = ?";
     private final static String DELETE_CAT_STATEMENT = "DELETE FROM catalogues WHERE internal_id = ?";
 
@@ -141,16 +143,40 @@ public class BrokerMessageController {
                                             for(String dataassetIdExternal: datassetFutures.keySet()) {
                                                 databaseService.query(SELECT_DS_STATEMENT, new JsonArray().add(dataassetIdExternal), datasetPersistenceReply -> {
                                                     if (datasetPersistenceReply.succeeded()) {
-                                                        if (datasetPersistenceReply.result().size()!=0) {
+                                                        if (!datasetPersistenceReply.result().isEmpty()) {
                                                             dataAssetIdsOfCatalogue(catalogueInternalId,r -> {
-                                                                ArrayList<String> listOfIds = r.result();
-                                                                for (JsonObject object : datasetPersistenceReply.result()){
-                                                                        for (String s : listOfIds) {
-                                                                            if (s.equals(object.getString("internal_id"))){
-                                                                                createDataSet(datassetFutures,dataassetIdExternal,s,catalogueInternalId);
-                                                                                break;
-                                                                            }
+                                                                if (r.succeeded()){
+                                                                    if (r.result()!=null){
+                                                                        String id = datasetPersistenceReply.result().get(0).getString("internal_id");
+                                                                        ArrayList<String> listIds = r.result();
+                                                                        if (!listIds.contains(id)){
+                                                                            createDataSet(datassetFutures,dataassetIdExternal,id,catalogueInternalId);
                                                                         }
+                                                                      for (String s : listIds){
+                                                                          databaseService.query(SELECT_DS_WITH_INTERNALID_STATEMENT,new JsonArray().add(s),externalIdreply -> {
+                                                                              for (JsonObject extId : externalIdreply.result()){
+                                                                                if (extId.getString("external_id").equals(dataassetIdExternal)){
+                                                                                    if (s.equals(id)){
+                                                                                        databaseService.update(DELETE_DS_UPDATE,new JsonArray().add(id),r2->{});
+                                                                                        createDataSet(datassetFutures,dataassetIdExternal,id,catalogueInternalId);
+                                                                                    }
+                                                                                }
+                                                                                else {
+                                                                                    brokerMessageService.deleteDataSet(s,catalogueInternalId,brokerMessageServiceAsyncResult -> {});
+                                                                                }
+                                                                              }
+                                                                          });
+
+                                                                      }
+
+                                                                    }
+                                                                    else {
+                                                                        String datasetId = UUID.randomUUID().toString();
+                                                                        createDataSet(datassetFutures,dataassetIdExternal,datasetId,catalogueInternalId);
+                                                                    }
+                                                                }
+                                                                else {
+                                                                 LOGGER.error(r.cause());
                                                                 }
                                                             });
                                                         }
@@ -195,15 +221,21 @@ public class BrokerMessageController {
             brokerMessageService.getAllDatasetsOfCatalogue(catalogueInternalId,jsonReply ->{
                 if (jsonReply.succeeded()) {
                     ArrayList<String> ids = new ArrayList<>();
-                    for (Object jsonObject:jsonReply.result().getJsonArray("@graph")) {
-                        JsonObject dataAsset = (JsonObject) jsonObject;
-                        String idString = dataAsset.getString("@id");
-                        String containsString = "https://ids.fokus.fraunhofer.de/set/data/";
-                        if (idString.toLowerCase().contains(containsString.toLowerCase())){
-                            String dataAssetId = idString.substring(containsString.length());
-                            ids.add(dataAssetId);
+                    if (jsonReply.result().isEmpty()){
+                        ids = null;
+                    }
+                    else {
+                        for (Object jsonObject:jsonReply.result().getJsonArray("@graph")) {
+                            JsonObject dataAsset = (JsonObject) jsonObject;
+                            String idString = dataAsset.getString("@id");
+                            String containsString = "https://ids.fokus.fraunhofer.de/set/data/";
+                            if (idString.toLowerCase().contains(containsString.toLowerCase())){
+                                String dataAssetId = idString.substring(containsString.length());
+                                ids.add(dataAssetId);
+                            }
                         }
                     }
+
                     asyncResultHandler.handle(Future.succeededFuture(ids));
 
                 }
