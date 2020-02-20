@@ -15,19 +15,19 @@ import io.vertx.ext.web.client.WebClient;
 public interface BrokerMessageService {
 
     @Fluent
-    BrokerMessageService createCatalogue(String body, String id, Handler<AsyncResult<BrokerMessageService>> readyHandler);
+    BrokerMessageService createCatalogue(String body, String id, Handler<AsyncResult<Void>> readyHandler);
 
     @Fluent
-    BrokerMessageService createDataSet(String body, String id, String catalogue, Handler<AsyncResult<BrokerMessageService>> readyHandler);
+    BrokerMessageService createDataSet(String body, String id, String catalogue, Handler<AsyncResult<Void>> readyHandler);
 
     @Fluent
     BrokerMessageService getAllDatasetsOfCatalogue(String catalogueId ,Handler<AsyncResult<JsonObject>> readyHandler);
 
     @Fluent
-    BrokerMessageService deleteDataSet(String id, String catalogue, Handler<AsyncResult<BrokerMessageService>> readyHandler);
+    BrokerMessageService deleteDataSet(String id, String catalogue, Handler<AsyncResult<Void>> readyHandler);
 
     @Fluent
-    BrokerMessageService deleteCatalogue(String id, Handler<AsyncResult<BrokerMessageService>> readyHandler);
+    BrokerMessageService deleteCatalogue(String id, Handler<AsyncResult<Void>> readyHandler);
     @GenIgnore
     static BrokerMessageService create(Vertx vertx, WebClient webClient, int gatewayPort, String gatewayHost, String apikey, Handler<AsyncResult<BrokerMessageService>> readyHandler) {
         return new BrokerMessageServiceImpl(vertx, webClient, gatewayPort, gatewayHost, apikey, readyHandler);
