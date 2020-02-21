@@ -107,116 +107,121 @@ public class BrokerMessageController {
     }
 
     private void update2(Connector connector, Handler<AsyncResult<String>> readyHandler) {
-        databaseService.query(SELECT_CAT_STATEMENT, new JsonArray().add(connector.getId().toString()), cataloguePersistenceReply -> {
-            if (cataloguePersistenceReply.succeeded()){
-                String catalogueInternalId = cataloguePersistenceReply.result().get(0).getString("internal_id");
-                LOGGER.info("internal ID resolved: " + catalogueInternalId);
+        resolveCatalogueId(connector.getId().toString(),next ->{
+            Future<String> catalogueFuture = Future.future();
+            Map<String, Future<String>> datassetFutures = new HashMap<>();
+            initTransformations(connector, catalogueFuture, datassetFutures);
+            catalogueFuture.setHandler(reply -> {
+                handleCatalogueExternal(reply,next.result(),next2->{
+                    updateDatasets(next,datassetFutures,next.result(),readyHandler);
+                });
+            });
+        });
+        }
 
-                Future<String> catalogueFuture = Future.future();
-                Map<String, Future<String>> datassetFutures = new HashMap<>();
-                initTransformations(connector, catalogueFuture, datassetFutures);
-                catalogueFuture.setHandler(reply -> {
-                    if (reply.succeeded()){
-                        brokerMessageService.createCatalogue(catalogueFuture.result(), catalogueInternalId, catalogueReply -> {
-                            if (catalogueReply.succeeded()) {
-                                CompositeFuture.all(new ArrayList<>(datassetFutures.values())).setHandler(dataassetCreateReply -> {
-                                    if(dataassetCreateReply.succeeded()){
-                                        if (datassetFutures.isEmpty()){
-                                            dataAssetIdsOfCatalogue(catalogueInternalId,arrayListAsyncResult -> {
-                                                if (arrayListAsyncResult.succeeded()){
-                                                    for (String dataAssetId : arrayListAsyncResult.result()){
-                                                        brokerMessageService.deleteDataSet(dataAssetId,catalogueInternalId,deleteHandler->{
-                                                            if (deleteHandler.succeeded()){
-                                                                LOGGER.info("Update succeeded");
-                                                            }
-                                                            else{
-                                                                LOGGER.error("Delete failure!");
-                                                            }
-                                                        });
-                                                    }
-                                                }
-                                            });
-                                            readyHandler.handle(Future.succeededFuture("Connector successfully updated."));
-                                        }
-                                        else{
-                                            for(String dataassetIdExternal: datassetFutures.keySet()) {
-                                                databaseService.query(SELECT_DS_STATEMENT, new JsonArray().add(dataassetIdExternal), datasetPersistenceReply -> {
-                                                    if (datasetPersistenceReply.succeeded()) {
-                                                        if (!datasetPersistenceReply.result().isEmpty()) {
-                                                            dataAssetIdsOfCatalogue(catalogueInternalId,r -> {
-                                                                if (r.succeeded()){
-                                                                    if (r.result()!=null){
-                                                                        String id = datasetPersistenceReply.result().get(0).getString("internal_id");
-                                                                        ArrayList<String> listIds = r.result();
-                                                                        if (!listIds.contains(id)){
-                                                                            createDataSet(datassetFutures,dataassetIdExternal,id,catalogueInternalId);
-                                                                        }
-                                                                      for (String s : listIds){
-                                                                          databaseService.query(SELECT_DS_WITH_INTERNALID_STATEMENT,new JsonArray().add(s),externalIdreply -> {
-                                                                              for (JsonObject extId : externalIdreply.result()){
-                                                                                if (extId.getString("external_id").equals(dataassetIdExternal)){
-                                                                                    if (s.equals(id)){
-                                                                                        databaseService.update(DELETE_DS_UPDATE,new JsonArray().add(id),r2->{});
-                                                                                        createDataSet(datassetFutures,dataassetIdExternal,id,catalogueInternalId);
-                                                                                    }
-                                                                                }
-                                                                                else {
-                                                                                    brokerMessageService.deleteDataSet(s,catalogueInternalId,brokerMessageServiceAsyncResult -> {});
-                                                                                }
-                                                                              }
-                                                                          });
+    private void updateDatasets(AsyncResult<String> catalogueIdResult, Map<String, Future<String>> datassetFutures,String catalogueInternalId ,Handler<AsyncResult<String>> readyHandler){
+        if (catalogueIdResult.succeeded()) {
+            CompositeFuture.all(new ArrayList<>(datassetFutures.values())).setHandler( dataassetCreateReply -> {
+                if(dataassetCreateReply.succeeded()){
+                    if (datassetFutures.isEmpty()){
+                        deleteDatasetsForUpdate(catalogueInternalId,readyHandler);
+                    }
+                    else{
+                        handle2(datassetFutures,catalogueInternalId,readyHandler);
+                    }
+                } else {
+                    LOGGER.error(dataassetCreateReply.cause());
+                    readyHandler.handle(Future.failedFuture(dataassetCreateReply.cause()));
+                }
+            });
+        } else {
+            readyHandler.handle(Future.failedFuture(catalogueIdResult.cause()));
+        }
+    }
 
-                                                                      }
-
-                                                                    }
-                                                                    else {
-                                                                        String datasetId = UUID.randomUUID().toString();
-                                                                        createDataSet(datassetFutures,dataassetIdExternal,datasetId,catalogueInternalId);
-                                                                    }
-                                                                }
-                                                                else {
-                                                                 LOGGER.error(r.cause());
-                                                                }
-                                                            });
-                                                        }
-                                                        else{
-                                                            String datId = UUID.randomUUID().toString();
-                                                            createDataSet(datassetFutures,dataassetIdExternal,datId,catalogueInternalId);
-                                                        }
-                                                    } else {
-                                                        LOGGER.error(datasetPersistenceReply.cause());
-                                                    }
-                                                });
+    private void deleteDatasetsForUpdate(String catalogueInternalId, Handler<AsyncResult<String>> readyHandler){
+        dataAssetIdsOfCatalogue(catalogueInternalId,arrayListAsyncResult -> {
+            if (arrayListAsyncResult.succeeded()){
+                for (String dataAssetId : arrayListAsyncResult.result()){
+                    brokerMessageService.deleteDataSet(dataAssetId,catalogueInternalId,deleteHandler->{
+                        if (deleteHandler.succeeded()){
+                            databaseService.update(DELETE_DS_UPDATE,new JsonArray().add(dataAssetId),r2->{});
+                            LOGGER.info("Update succeeded");
+                            readyHandler.handle(Future.succeededFuture("Connector successfully updated."));
+                        }
+                        else{
+                            LOGGER.error(deleteHandler.cause());
+                            readyHandler.handle(Future.failedFuture(deleteHandler.cause()));
+                        }
+                    });
+                }
+            }
+            else {
+                LOGGER.error(arrayListAsyncResult.cause());
+                readyHandler.handle(Future.failedFuture(arrayListAsyncResult.cause()));
+            }
+        });
+    }
+    private void resolveDatasetsForUpdate(String dataassetIdExternal, Handler<AsyncResult<String>> next ){
+        databaseService.query(SELECT_DS_STATEMENT, new JsonArray().add(dataassetIdExternal), datasetPersistenceReply -> {
+            if (datasetPersistenceReply.succeeded()) {
+                if (!datasetPersistenceReply.result().isEmpty()) {
+                    String id = datasetPersistenceReply.result().get(0).getString("internal_id");
+                    next.handle(Future.succeededFuture(id));
+                }
+                else {
+                    String datId = UUID.randomUUID().toString();
+                    next.handle(Future.succeededFuture(datId));
+                }
+            }
+            else {
+                LOGGER.error(datasetPersistenceReply.cause());
+                next.handle(Future.failedFuture(datasetPersistenceReply.cause()));
+            }
+        });
+    }
+    public void handle2(Map<String, Future<String>> datassetFutures,String catalogueInternalId,Handler<AsyncResult<String>> readyHandler){
+        for(String dataassetIdExternal: datassetFutures.keySet()) {
+            resolveDatasetsForUpdate(dataassetIdExternal,next->{
+                dataAssetIdsOfCatalogue(catalogueInternalId,r -> {
+                    if (r.succeeded()){
+                        if (r.result()!=null){
+                            String id = next.result();
+                            ArrayList<String> listIds = r.result();
+                            if (!listIds.contains(id)){
+                                createDataSet(datassetFutures,dataassetIdExternal,id,catalogueInternalId);
+                            }
+                            for (String idOfcatalogue : listIds){
+                                databaseService.query(SELECT_DS_WITH_INTERNALID_STATEMENT,new JsonArray().add(idOfcatalogue),externalIdreply -> {
+                                    for (JsonObject extId : externalIdreply.result()){
+                                        if (extId.getString("external_id").equals(dataassetIdExternal)){
+                                            if (idOfcatalogue.equals(id)){
+                                                databaseService.update(DELETE_DS_UPDATE,new JsonArray().add(id),r2->{});
+                                                createDataSet(datassetFutures,dataassetIdExternal,id,catalogueInternalId);
                                             }
-                                            readyHandler.handle(Future.succeededFuture("Connector successfully updated."));
                                         }
-
-                                    }
-                                    else {
-                                        LOGGER.error(dataassetCreateReply.cause());
-                                        readyHandler.handle(Future.failedFuture(dataassetCreateReply.cause()));
+                                        else {
+                                            brokerMessageService.deleteDataSet(idOfcatalogue,catalogueInternalId,brokerMessageServiceAsyncResult -> {});
+                                        }
                                     }
                                 });
                             }
-                            else {
-                                LOGGER.error(catalogueReply.cause());
-                                readyHandler.handle(Future.failedFuture(catalogueReply.cause()));
-                            }
-                        });
+                        }
+                        else {
+                            String datasetId = UUID.randomUUID().toString();
+                            createDataSet(datassetFutures,dataassetIdExternal,datasetId,catalogueInternalId);
+                        }
                     }
                     else {
-                        LOGGER.error(reply.cause());
-                        readyHandler.handle(Future.failedFuture(reply.cause()));
+                        LOGGER.error(r.cause());
                     }
                 });
-            }
-            else{
-                LOGGER.error(cataloguePersistenceReply.cause());
-            }
             });
         }
+        readyHandler.handle(Future.succeededFuture("Connector successfully updated."));
+    }
 
-        private void dataAssetIdsOfCatalogue (String catalogueInternalId, Handler<AsyncResult<ArrayList<String>>> asyncResultHandler){
+    private void dataAssetIdsOfCatalogue (String catalogueInternalId, Handler<AsyncResult<ArrayList<String>>> asyncResultHandler){
             brokerMessageService.getAllDatasetsOfCatalogue(catalogueInternalId,jsonReply ->{
                 if (jsonReply.succeeded()) {
                     ArrayList<String> ids = new ArrayList<>();
@@ -245,6 +250,7 @@ public class BrokerMessageController {
                 }
             });
         }
+
         private void createDataSet(Map<String, Future<String>> datassetFutures,String datasetExternalId,String dataSetId ,  String catalogueId ) {
         brokerMessageService.createDataSet(datassetFutures.get(datasetExternalId).result(),dataSetId ,catalogueId , datasetReply -> {
             if(datasetReply.succeeded()){
@@ -291,19 +297,18 @@ public class BrokerMessageController {
 //    }
 
     private void register(Connector connector, Handler<AsyncResult<String>> readyHandler) {
+        String catalogueId = UUID.randomUUID().toString();
         Future<String> catalogueFuture = Future.future();
         Map<String, Future<String>> datassetFutures = new HashMap<>();
         initTransformations(connector, catalogueFuture, datassetFutures);
-
         catalogueFuture.setHandler( catalogueTTLResult ->
-                handleCatalogueExternal(catalogueTTLResult, piveauCatalogueReply ->
+                handleCatalogueExternal(catalogueTTLResult,catalogueId ,piveauCatalogueReply ->
                         handleCatalogueInternal(piveauCatalogueReply, connector.getId().toString(), internalCatalogueReply ->
                                 handleDatasets(internalCatalogueReply, datassetFutures, readyHandler))));
     }
 
-    private void handleCatalogueExternal(AsyncResult<String> catalogue, Handler<AsyncResult<String>> next){
+    private void handleCatalogueExternal(AsyncResult<String> catalogue,String catalogueId, Handler<AsyncResult<String>> next){
         if(catalogue.succeeded()) {
-            String catalogueId = UUID.randomUUID().toString();
             brokerMessageService.createCatalogue(catalogue.result(), catalogueId, catalogueReply -> {
                 if(catalogueReply.succeeded()) {
                     next.handle(Future.succeededFuture(catalogueId));
@@ -500,6 +505,10 @@ public class BrokerMessageController {
         } else {
             datasetDeleteFuture.fail(reply.cause());
         }
+    }
+
+    private void deleteDatasetInternalFromDatabase(){
+
     }
 
     private void deleteCatalogueExternal(AsyncResult<CompositeFuture> reply, String catalogueInternalId, Handler<AsyncResult> next){
