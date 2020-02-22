@@ -11,7 +11,6 @@ import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 import io.vertx.core.logging.Logger;
 import io.vertx.core.logging.LoggerFactory;
-
 import java.util.*;
 import java.util.List;
 import java.util.Map;
@@ -127,7 +126,7 @@ public class BrokerMessageController {
                         deleteDatasetsForUpdate(catalogueInternalId,readyHandler);
                     }
                     else{
-                        handle2(datassetFutures,catalogueInternalId,readyHandler);
+                        handleUpdateDatasets(datassetFutures,catalogueInternalId,readyHandler);
                     }
                 } else {
                     LOGGER.error(dataassetCreateReply.cause());
@@ -137,6 +136,17 @@ public class BrokerMessageController {
         } else {
             readyHandler.handle(Future.failedFuture(catalogueIdResult.cause()));
         }
+    }
+
+    public void handleUpdateDatasets(Map<String, Future<String>> datassetFutures,String catalogueInternalId,Handler<AsyncResult<String>> readyHandler){
+        handleIdsFromPiveau(catalogueInternalId,arrayListAsyncResult -> {
+            if (arrayListAsyncResult.result()!=null){
+                handleWithTheReturnedMapIds(false,datassetFutures,catalogueInternalId,arrayListAsyncResult.result(),readyHandler);
+            }
+            else {
+                handleWithTheReturnedMapIds(true,datassetFutures,catalogueInternalId,arrayListAsyncResult.result(),readyHandler);
+            }
+        });
     }
 
     private void deleteDatasetsForUpdate(String catalogueInternalId, Handler<AsyncResult<String>> readyHandler){
@@ -180,45 +190,91 @@ public class BrokerMessageController {
             }
         });
     }
-    public void handle2(Map<String, Future<String>> datassetFutures,String catalogueInternalId,Handler<AsyncResult<String>> readyHandler){
-        for(String dataassetIdExternal: datassetFutures.keySet()) {
-            resolveDatasetsForUpdate(dataassetIdExternal,next->{
-                dataAssetIdsOfCatalogue(catalogueInternalId,r -> {
-                    if (r.succeeded()){
-                        if (r.result()!=null){
-                            String id = next.result();
-                            ArrayList<String> listIds = r.result();
-                            if (!listIds.contains(id)){
-                                createDataSet(datassetFutures,dataassetIdExternal,id,catalogueInternalId);
-                            }
-                            for (String idOfcatalogue : listIds){
-                                databaseService.query(SELECT_DS_WITH_INTERNALID_STATEMENT,new JsonArray().add(idOfcatalogue),externalIdreply -> {
-                                    for (JsonObject extId : externalIdreply.result()){
-                                        if (extId.getString("external_id").equals(dataassetIdExternal)){
-                                            if (idOfcatalogue.equals(id)){
-                                                databaseService.update(DELETE_DS_UPDATE,new JsonArray().add(id),r2->{});
-                                                createDataSet(datassetFutures,dataassetIdExternal,id,catalogueInternalId);
-                                            }
-                                        }
-                                        else {
-                                            brokerMessageService.deleteDataSet(idOfcatalogue,catalogueInternalId,brokerMessageServiceAsyncResult -> {});
-                                        }
-                                    }
-                                });
-                            }
-                        }
-                        else {
-                            String datasetId = UUID.randomUUID().toString();
-                            createDataSet(datassetFutures,dataassetIdExternal,datasetId,catalogueInternalId);
-                        }
-                    }
-                    else {
-                        LOGGER.error(r.cause());
-                    }
-                });
-            });
+
+    private void resolveAllDatasetIdsFromMessage (Map<String, Future<String>> datassetFutures,Handler<AsyncResult<List<?>>> resultHandler){
+        List<Future> mapFutures = new ArrayList<>();
+        for (String externalId : datassetFutures.keySet()){
+            Future<Map<String,String>> map = getIdsFromMessage(externalId);
+            mapFutures.add(map);
         }
-        readyHandler.handle(Future.succeededFuture("Connector successfully updated."));
+        CompositeFuture.all(mapFutures).setHandler(reply->{
+            resultHandler.handle(Future.succeededFuture(reply.result().list()));
+        });
+
+    }
+
+    private Future<Map<String,String>> getIdsFromMessage(String dataassetIdExternal) {
+        Future<Map<String,String>> future = Future.future();
+        resolveDatasetsForUpdate(dataassetIdExternal,next->{
+            if (next.succeeded()){
+                Map<String , String> map = new HashMap<>();
+                map.put("internalId",next.result());
+                map.put("externalId",dataassetIdExternal);
+                future.complete(map);
+            }
+        });
+        return future;
+    }
+
+    private void handleIdsFromPiveau(String catalogueInternalId,Handler<AsyncResult<ArrayList<String>>> resultHandler){
+        dataAssetIdsOfCatalogue(catalogueInternalId,r -> {
+            if (r.succeeded()) {
+                resultHandler.handle(Future.succeededFuture(r.result()));
+            }
+            else {
+                LOGGER.error(r.cause());
+            }
+        });
+    }
+    private void returnMapOfIds(Map<String, Future<String>> datassetFutures,Handler<AsyncResult<ArrayList<Map<String,String>>>> resultHandler){
+        resolveAllDatasetIdsFromMessage(datassetFutures,asyncResult->{
+            if (asyncResult.succeeded()){
+                ArrayList<Map<String,String>> result = (ArrayList<Map<String, String>>) asyncResult.result();
+                resultHandler.handle(Future.succeededFuture(result));
+            }
+            else {
+                LOGGER.error(asyncResult.cause());
+            }
+        });
+    }
+
+    private void handleWithTheReturnedMapIds(boolean checkNull ,Map<String, Future<String>> datassetFutures,String catalogueInternalId,ArrayList<String> listIdsFromPiveau,Handler<AsyncResult<String>> readyHandler){
+        returnMapOfIds(datassetFutures,arrayListAsyncResult -> {
+            if (arrayListAsyncResult.succeeded()){
+                if (checkNull){
+                    for (Map<String,String> map:arrayListAsyncResult.result()){
+                        createDataSet(datassetFutures,map.get("externalId"),map.get("internalId"),catalogueInternalId);
+                    }
+                    readyHandler.handle(Future.succeededFuture("Connector successfully updated."));
+                }
+                else {
+                    ArrayList<String> internalIdList = new ArrayList<>();
+
+                    for (Map<String,String> map:arrayListAsyncResult.result()){
+                        internalIdList.add(map.get("internalId"));
+                        String internalId = map.get("internalId");
+                        String externalId = map.get("externalId");
+                        if (listIdsFromPiveau.contains(internalId)){
+                            databaseService.update(DELETE_DS_UPDATE,new JsonArray().add(internalId),deleteReply->{});
+                            createDataSet(datassetFutures,externalId,internalId,catalogueInternalId);
+                        }
+                        else{
+                            createDataSet(datassetFutures,externalId,internalId,catalogueInternalId);
+                        }
+                    }
+
+                    for (String id:listIdsFromPiveau){
+                        if (!internalIdList.contains(id)){
+                            brokerMessageService.deleteDataSet(id,catalogueInternalId,brokerMessageServiceAsyncResult -> {});
+                        }
+                    }
+                    readyHandler.handle(Future.succeededFuture("Connector successfully updated."));
+                }
+            }
+            else {
+                LOGGER.error(arrayListAsyncResult.cause());
+            }
+        });
     }
 
     private void dataAssetIdsOfCatalogue (String catalogueInternalId, Handler<AsyncResult<ArrayList<String>>> asyncResultHandler){
@@ -239,14 +295,11 @@ public class BrokerMessageController {
                             }
                         }
                     }
-
                     asyncResultHandler.handle(Future.succeededFuture(ids));
-
                 }
                 else {
                     LOGGER.error("Can not get Ids of Catalogue");
                     asyncResultHandler.handle(Future.failedFuture(jsonReply.cause()));
-
                 }
             });
         }
