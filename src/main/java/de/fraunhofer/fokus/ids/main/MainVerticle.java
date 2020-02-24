@@ -95,8 +95,10 @@ public class MainVerticle extends AbstractVerticle {
     private void reply(AsyncResult result, HttpServerResponse response) {
         if(result.succeeded() && result.result() != null){
             String entity = result.result().toString();
-            response.putHeader("content-type", ContentType.APPLICATION_JSON.toString());
-            response.end(entity);
+            if (!response.headWritten()){
+                response.putHeader("content-type", ContentType.APPLICATION_JSON.toString());
+                response.end(entity);
+            }
         } else {
             response.setStatusCode(404).end();
         }

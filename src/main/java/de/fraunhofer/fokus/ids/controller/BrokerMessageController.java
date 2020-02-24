@@ -129,20 +129,24 @@ public class BrokerMessageController {
        piveauDatasetExternalIds.setHandler( result -> {
            if(result.succeeded()){
                Collection<String> piveauIds = result.result().keySet();
-                for(String messageId : messageDatasetIds){
-                    if(piveauIds.contains(messageId)){
-                        updateDataset(datassetFutures, messageId, catalogueId, readyHandler);
-                    } else {
-                        String internalId = UUID.randomUUID().toString();
-                        createDataSet(datassetFutures, messageId, internalId, catalogueId);
-                        readyHandler.handle(Future.succeededFuture("Connector successfully updated."));
+                if (piveauIds.isEmpty()&&messageDatasetIds.isEmpty()){
+                    readyHandler.handle(Future.succeededFuture("Connector successfully updated."));
+                }
+                else{
+                    for(String messageId : messageDatasetIds){
+                        if(piveauIds.contains(messageId)){
+                            updateDataset(datassetFutures, messageId, catalogueId, readyHandler);
+                        } else {
+                            String internalId = UUID.randomUUID().toString();
+                            createDataSet(datassetFutures, messageId, internalId, catalogueId);
+                            readyHandler.handle(Future.succeededFuture("Connector successfully updated."));
+                        }
+                        piveauIds.remove(messageId);
                     }
-                    piveauIds.remove(messageId);
+                    for(String orphan : piveauIds){
+                        deleteDataseInPiveau(result.result().get(orphan), catalogueId, res -> deleteDatasetInDatabase(res, orphan, readyHandler));
+                    }
                 }
-                for(String orphan : piveauIds){
-                    deleteDataseInPiveau(result.result().get(orphan), catalogueId, res -> deleteDatasetInDatabase(res, orphan, readyHandler));
-                }
-
            } else {
                readyHandler.handle(Future.failedFuture(result.cause()));
            }
