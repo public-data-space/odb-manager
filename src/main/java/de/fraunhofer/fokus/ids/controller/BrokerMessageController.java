@@ -27,7 +27,6 @@ public class BrokerMessageController {
     private final static String SELECT_CAT_STATEMENT = "SELECT * FROM catalogues WHERE external_id=?";
     private final static String SELECT_DS_STATEMENT = "SELECT * FROM datasets WHERE external_id=?";
     private final static String RESOLVE_DS_STATEMENT = "SELECT * FROM datasets WHERE internal_id=?";
-    private final static String SELECT_DS_WITH_INTERNALID_STATEMENT = "SELECT * FROM datasets WHERE internal_id=?";
     private static final String DELETE_DS_UPDATE = "DELETE FROM datasets WHERE internal_id = ?";
     private final static String DELETE_CAT_STATEMENT = "DELETE FROM catalogues WHERE internal_id = ?";
 
@@ -591,9 +590,20 @@ public class BrokerMessageController {
 
         resolveCatalogueId(connector.getId().toString(), catalogueIdResult -> {
             if(catalogueIdResult.succeeded()) {
-                resolveDatasets(catalogueIdResult, connector.getCatalog().getOffer(), datasetId ->
-                        deleteDatasetExternal(datasetId, catalogueIdResult, externalDeleteReply ->
-                                deleteDatasetInternal(externalDeleteReply, datasetId, datasetDeleteFutures)));
+                if (connector.getCatalog().getOffer().isEmpty()){
+                    dataAssetIdsOfCatalogue(catalogueIdResult.result(),asyncResult->{
+                        if (!asyncResult.result().isEmpty()){
+                            for (String id:asyncResult.result()){
+                                deleteDataseInPiveau(id,catalogueIdResult.result(),next-> deleteDatasetInDatabase(next,id,readyHandler));
+                            }
+                        }
+                    });
+                }
+                else {
+                    resolveDatasets(catalogueIdResult, connector.getCatalog().getOffer(), datasetId ->
+                            deleteDatasetExternal(datasetId, catalogueIdResult, externalDeleteReply ->
+                                    deleteDatasetInternal(externalDeleteReply, datasetId, datasetDeleteFutures)));
+                }
 
                 CompositeFuture.all(datasetDeleteFutures).setHandler(reply -> {
                     if (reply.succeeded()) {
@@ -622,19 +632,19 @@ public class BrokerMessageController {
         });
     }
 
-    private void resolveDatasets(AsyncResult<String> catalogueId, List<? extends  Resource> dataassets, Handler<AsyncResult> next ){
+    private void resolveDatasets(AsyncResult<String> catalogueId, List<? extends  Resource> dataassets, Handler<AsyncResult<String>> next ){
         if(catalogueId.succeeded()) {
-            for (Resource dataasset : dataassets) {
-                databaseService.query(SELECT_DS_STATEMENT, new JsonArray().add(dataasset.getId().toString()), datasetIdreply -> {
-                    if(datasetIdreply.succeeded() && !datasetIdreply.result().isEmpty()) {
-                        next.handle(Future.succeededFuture(datasetIdreply.result().get(0).getString("internal_id")));
-                    }
-                    else {
-                        LOGGER.error(datasetIdreply.cause());
-                        next.handle(Future.failedFuture(datasetIdreply.cause()));
-                    }
-                });
-            }
+                for (Resource dataasset : dataassets) {
+                    databaseService.query(SELECT_DS_STATEMENT, new JsonArray().add(dataasset.getId().toString()), datasetIdreply -> {
+                        if(datasetIdreply.succeeded() && !datasetIdreply.result().isEmpty()) {
+                            next.handle(Future.succeededFuture(datasetIdreply.result().get(0).getString("internal_id")));
+                        }
+                        else {
+                            LOGGER.error(datasetIdreply.cause());
+                            next.handle(Future.failedFuture(datasetIdreply.cause()));
+                        }
+                    });
+                }
         } else {
             next.handle(Future.failedFuture(catalogueId.cause()));
         }
@@ -660,7 +670,7 @@ public class BrokerMessageController {
         Future datasetDeleteFuture = Future.future();
         datasetDeleteFutures.add(datasetDeleteFuture);
         if (reply.succeeded()){
-            databaseService.update(DELETE_DS_UPDATE,new JsonArray().add(datasetInternalId),internalDatasetDeleteResult ->{
+            databaseService.update(DELETE_DS_UPDATE,new JsonArray().add(datasetInternalId.result()),internalDatasetDeleteResult ->{
                 if (reply.succeeded()) {
                     LOGGER.info("DataAsset From Database successfully deleted");
                     datasetDeleteFuture.complete();
