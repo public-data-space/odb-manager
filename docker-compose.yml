@@ -31,7 +31,7 @@ services:
       - PIVEAU_HUB_LOAD_VOCABULARIES=true
       - PIVEAU_HUB_LOAD_VOCABULARIES_FETCH=false
       - PIVEAU_TRIPLESTORE_CONFIG={"address":"http://virtuoso:8890", "username":"dba","password":"dba"}
-      - PIVEAU_HUB_VALIDATOR={"enabled":false}
+      - PIVEAU_HUB_VALIDATOR={"enabled":true}
       - PIVEAU_HUB_SEARCH_SERVICE={"url":"piveau-search","port":8080,"api_key":"myapikey"}
       - PIVEAU_TRANSLATION_SERVICE={"enable":false}
       - PIVEAU_HUB_API_KEY=yourapikey
