@@ -54,25 +54,35 @@ public class BrokerMessageController {
 
     public void getData (String input, Handler<AsyncResult<String>> readyHandler){
         ConnectorNotificationMessage header = IDSMessageParser.getHeader(input);
-        URI uri = header.getId();
-        Connector connector = IDSMessageParser.getBody(input);
-        try {
-            if (header instanceof ConnectorAvailableMessage) {
-                LOGGER.info("AvailableMessage received.");
-                register(uri,connector, readyHandler);
-            } else if (header instanceof ConnectorUnavailableMessage) {
-                LOGGER.info("UnavailableMessage received.");
-                unregister(uri,connector, readyHandler);
-            } else if (header instanceof ConnectorUpdateMessage) {
-                LOGGER.info("UpdateMessage received.");
-                update(uri,connector, readyHandler);
-            } else {
-                LOGGER.error("Invalid message signature.");
+        if (header == null){
+            try {
+                handleRejectionMessage(RejectionReason.MALFORMED_MESSAGE ,new URI(String.valueOf(RejectionReason.MALFORMED_MESSAGE )),readyHandler);
+            } catch (URISyntaxException e) {
+                e.printStackTrace();
             }
         }
-        catch (Exception e){
-            e.printStackTrace();
-            LOGGER.error("Something went wrong while parsing the IDS message.");
+        else{
+            URI uri = header.getId();
+            Connector connector = IDSMessageParser.getBody(input);
+            try {
+                if (header instanceof ConnectorAvailableMessage) {
+                    LOGGER.info("AvailableMessage received.");
+                    register(uri,connector, readyHandler);
+                } else if (header instanceof ConnectorUnavailableMessage) {
+                    LOGGER.info("UnavailableMessage received.");
+                    unregister(uri,connector, readyHandler);
+                } else if (header instanceof ConnectorUpdateMessage) {
+                    LOGGER.info("UpdateMessage received.");
+                    update(uri,connector, readyHandler);
+                } else {
+                    LOGGER.error(RejectionReason.MESSAGE_TYPE_NOT_SUPPORTED);
+                    handleRejectionMessage(RejectionReason.MESSAGE_TYPE_NOT_SUPPORTED,uri,readyHandler);
+                }
+            }
+            catch (Exception e){
+                e.printStackTrace();
+                LOGGER.error("Something went wrong while parsing the IDS message.");
+            }
         }
     }
 
@@ -89,7 +99,7 @@ public class BrokerMessageController {
                 });
             } else {
                 LOGGER.error(next.cause());
-                readyHandler.handle(Future.failedFuture(next.cause()));
+                handleRejectionMessage(RejectionReason.INTERNAL_RECIPIENT_ERROR,uri,readyHandler);
             }
         });
     }
@@ -126,12 +136,12 @@ public class BrokerMessageController {
                             if(ac.succeeded()){
                                 handleSucceededMessage(uri,readyHandler);
                             } else {
-                                handleRejectionMessage(uri,readyHandler);
+                                handleRejectionMessage(RejectionReason.INTERNAL_RECIPIENT_ERROR,uri,readyHandler);
                             }
                         });
                     }
            } else {
-                   handleRejectionMessage(uri,readyHandler);
+                   handleRejectionMessage(RejectionReason.NOT_FOUND,uri,readyHandler);
            }
        }));
 
@@ -308,16 +318,16 @@ public class BrokerMessageController {
                             handleSucceededMessage(uri,readyHandler);
                         } else {
                             LOGGER.error(ac.cause());
-                            handleRejectionMessage(uri,readyHandler);
+                            handleRejectionMessage(RejectionReason.INTERNAL_RECIPIENT_ERROR,uri,readyHandler);
                         }
                     });
                 } else {
                     LOGGER.error(dataassetCreateReply.cause());
-                    readyHandler.handle(Future.failedFuture(dataassetCreateReply.cause()));
+                    handleRejectionMessage(RejectionReason.INTERNAL_RECIPIENT_ERROR,uri,readyHandler);
                 }
             });
         } else {
-            readyHandler.handle(Future.failedFuture(catalogueIdResult.cause()));
+            handleRejectionMessage(RejectionReason.INTERNAL_RECIPIENT_ERROR,uri,readyHandler);
         }
     }
 
@@ -351,18 +361,18 @@ public class BrokerMessageController {
                                     }
                                     else {
                                         LOGGER.error(datasetIdreply.cause());
-                                        handleRejectionMessage(uri,readyHandler);
+                                        handleRejectionMessage(RejectionReason.INTERNAL_RECIPIENT_ERROR,uri,readyHandler);
                                     }
                                 });
                             }
                             handleCatalogue(uri,new ArrayList<>(datasetDeleteFutures.values()), catalogueIdResult.result(), readyHandler);
                         } else {
                             LOGGER.error(piveauDatasetIds.cause());
-                            readyHandler.handle(Future.failedFuture(piveauDatasetIds.cause()));
+                            handleRejectionMessage(RejectionReason.NOT_FOUND,uri,readyHandler);
                         }
                     });
             } else {
-                readyHandler.handle(Future.failedFuture(catalogueIdResult.cause()));
+                handleRejectionMessage(RejectionReason.INTERNAL_RECIPIENT_ERROR,uri,readyHandler);
             }
         });
     }
@@ -373,7 +383,7 @@ public class BrokerMessageController {
                 deleteCatalogueExternal(reply, catalogueIdResult, externalCatalogueDeleteReply ->
                         deleteCatalogueInternal(uri,externalCatalogueDeleteReply, catalogueIdResult,readyHandler));
             } else {
-                readyHandler.handle(Future.failedFuture(reply.cause()));
+                handleRejectionMessage(RejectionReason.INTERNAL_RECIPIENT_ERROR,uri,readyHandler);
             }
         });
     }
@@ -440,13 +450,13 @@ public class BrokerMessageController {
                     handleSucceededMessage(uri,readyHandler);
                 } else {
                     LOGGER.error(deleteCatalogueReply.cause());
-                    handleRejectionMessage(uri,readyHandler);
+                    handleRejectionMessage(RejectionReason.INTERNAL_RECIPIENT_ERROR,uri,readyHandler);
                 }
             });
         }
         else{
             LOGGER.error(reply.cause());
-            readyHandler.handle(Future.failedFuture(reply.cause()));
+            handleRejectionMessage(RejectionReason.INTERNAL_RECIPIENT_ERROR,uri,readyHandler);
         }
     }
 
@@ -482,7 +492,7 @@ public class BrokerMessageController {
         }
     }
 
-    private void createRejectionMessage(URI uriOfHeader,Handler<AsyncResult<RejectionMessage>> resultHandler)  {
+    private void createRejectionMessage(RejectionReason rejectionReason,URI uriOfHeader,Handler<AsyncResult<RejectionMessage>> resultHandler)  {
         try {
             String uuid = UUID.randomUUID().toString();
             RejectionMessage message = new RejectionMessageBuilder(new URI(uuid))
@@ -494,6 +504,7 @@ public class BrokerMessageController {
                             ._tokenFormat_(TokenFormat.JWT)
                             ._tokenValue_(getJWT())
                             .build())
+                    ._rejectionReason_(rejectionReason)
                     .build();
             resultHandler.handle(Future.succeededFuture(message));
         } catch (URISyntaxException e) {
@@ -550,8 +561,8 @@ public class BrokerMessageController {
         });
     }
 
-    private void handleRejectionMessage (URI uri,Handler<AsyncResult<String>> readyHandler){
-        createRejectionMessage(uri,rejectionMessageAsyncResult -> {
+    private void handleRejectionMessage (RejectionReason rejectionReason,URI uri,Handler<AsyncResult<String>> readyHandler){
+        createRejectionMessage(rejectionReason,uri,rejectionMessageAsyncResult -> {
             if (rejectionMessageAsyncResult.succeeded()){
                 Buffer buffer = createMultipartMessage(rejectionMessageAsyncResult.result(),null);
                 readyHandler.handle(Future.succeededFuture(buffer.toString()));
