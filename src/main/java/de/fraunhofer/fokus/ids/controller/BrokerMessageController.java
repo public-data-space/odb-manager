@@ -105,7 +105,7 @@ public class BrokerMessageController {
                             piveauIds.remove(messageId);
                         }
                         for(String orphan : piveauIds){
-                            deleteDataseInPiveau(result.result().get(orphan), catalogueId, res -> deleteDatasetInDatabase(res, DELETE_DS_BY_IDS_ID_UPDATE, orphan, datasetUpdateFutures));
+                            deleteDatasetPiveau(result.result().get(orphan), catalogueId, res -> deleteDatasetInDatabase(res, DELETE_DS_BY_IDS_ID_UPDATE, orphan, datasetUpdateFutures));
                         }
                         CompositeFuture.all(new ArrayList<>(datasetUpdateFutures.values())).setHandler(ac -> {
                             if(ac.succeeded()){
@@ -150,17 +150,6 @@ public class BrokerMessageController {
             else {
                 LOGGER.error(datasetPersistenceReply.cause());
                 next.handle(Future.failedFuture(datasetPersistenceReply.cause()));
-            }
-        });
-    }
-
-    private void deleteDataseInPiveau(String datasetId, String catalogueId, Handler<AsyncResult<Void>> next) {
-        brokerMessageService.deleteDataSet(datasetId, catalogueId, deleteAsset -> {
-            if (deleteAsset.succeeded()) {
-                next.handle(Future.succeededFuture());
-            } else {
-                LOGGER.error(deleteAsset.cause());
-                next.handle(Future.failedFuture(deleteAsset.cause()));
             }
         });
     }
@@ -328,7 +317,7 @@ public class BrokerMessageController {
                                 for (String id : piveauDatasetIds.result()) {
                                     Future datasetDeleteFuture = Future.future();
                                     datasetDeleteFutures.put(id, datasetDeleteFuture);
-                                    deleteDataseInPiveau(id, catalogueIdResult.result(), next -> deleteDatasetInDatabase(next, DELETE_DS_UPDATE, id, datasetDeleteFutures));
+                                    deleteDatasetPiveau(id, catalogueIdResult.result(), next -> deleteDatasetInDatabase(next, DELETE_DS_UPDATE, id, datasetDeleteFutures));
                                 }
                             }
                             for (Resource dataasset : connector.getCatalog().getOffer()) {
@@ -339,7 +328,7 @@ public class BrokerMessageController {
                                         if(!datasetIdreply.result().isEmpty()) {
                                             String datasePiveautId = datasetIdreply.result().get(0).getString("internal_id");
                                             String datasetIdsId = datasetIdreply.result().get(0).getString("external_id");
-                                            deleteDatasetPiveau(datasePiveautId, catalogueIdResult, externalDeleteReply ->
+                                            deleteDatasetPiveau(datasePiveautId, catalogueIdResult.result(), externalDeleteReply ->
                                                     deleteDatasetInternal(externalDeleteReply, datasePiveautId, datasetIdsId, datasetDeleteFutures));
                                         } else {
                                             datasetDeleteFuture.complete();
@@ -386,8 +375,8 @@ public class BrokerMessageController {
         });
     }
 
-    private void deleteDatasetPiveau(String datasetId, AsyncResult<String> catalogueId, Handler<AsyncResult<Void>> next){
-        brokerMessageService.deleteDataSet(datasetId, catalogueId.result(), deleteAsset ->{
+    private void deleteDatasetPiveau(String datasetId,String catalogueId, Handler<AsyncResult<Void>> next){
+        brokerMessageService.deleteDataSet(datasetId, catalogueId, deleteAsset ->{
             if (deleteAsset.succeeded()){
                 next.handle(Future.succeededFuture());
             } else {
