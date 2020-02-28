@@ -6,11 +6,25 @@ import de.fraunhofer.fokus.ids.services.dcatTransformerService.DCATTransformerSe
 import de.fraunhofer.fokus.ids.utils.IDSMessageParser;
 import de.fraunhofer.iais.eis.*;
 import io.vertx.core.*;
+import io.vertx.core.buffer.Buffer;
 import io.vertx.core.json.Json;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 import io.vertx.core.logging.Logger;
 import io.vertx.core.logging.LoggerFactory;
+import org.apache.http.entity.ContentType;
+import org.apache.http.entity.mime.MultipartEntityBuilder;
+import org.apache.http.entity.mime.content.ContentBody;
+import org.apache.http.entity.mime.content.StringBody;
+
+import javax.xml.datatype.DatatypeConfigurationException;
+import javax.xml.datatype.DatatypeFactory;
+import javax.xml.datatype.XMLGregorianCalendar;
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.net.URI;
+import java.net.URISyntaxException;
+import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.Collection;
 import java.util.List;
@@ -40,17 +54,18 @@ public class BrokerMessageController {
 
     public void getData (String input, Handler<AsyncResult<String>> readyHandler){
         ConnectorNotificationMessage header = IDSMessageParser.getHeader(input);
+        URI uri = header.getId();
         Connector connector = IDSMessageParser.getBody(input);
         try {
             if (header instanceof ConnectorAvailableMessage) {
                 LOGGER.info("AvailableMessage received.");
-                register(connector, readyHandler);
+                register(uri,connector, readyHandler);
             } else if (header instanceof ConnectorUnavailableMessage) {
                 LOGGER.info("UnavailableMessage received.");
-                unregister(connector, readyHandler);
+                unregister(uri,connector, readyHandler);
             } else if (header instanceof ConnectorUpdateMessage) {
                 LOGGER.info("UpdateMessage received.");
-                update(connector, readyHandler);
+                update(uri,connector, readyHandler);
             } else {
                 LOGGER.error("Invalid message signature.");
             }
@@ -61,7 +76,7 @@ public class BrokerMessageController {
         }
     }
 
-    private void update(Connector connector, Handler<AsyncResult<String>> readyHandler){
+    private void update(URI uri,Connector connector, Handler<AsyncResult<String>> readyHandler){
         resolveCatalogueId(connector.getId().toString(),next ->{
             if(next.succeeded()) {
                 Future<String> catalogueFuture = Future.future();
@@ -69,7 +84,7 @@ public class BrokerMessageController {
                 initTransformations(connector, catalogueFuture, datassetFutures);
                 catalogueFuture.setHandler(reply -> {
                     handleCatalogueExternal(reply, next.result(), next2 -> {
-                        updateDatasets(datassetFutures, next.result(), readyHandler);
+                        updateDatasets(uri,datassetFutures, next.result(), readyHandler);
                     });
                 });
             } else {
@@ -79,7 +94,7 @@ public class BrokerMessageController {
         });
     }
 
-    private void updateDatasets(Map<String, Future<String>> datassetFutures, String catalogueId, Handler<AsyncResult<String>> readyHandler) {
+    private void updateDatasets(URI uri,Map<String, Future<String>> datassetFutures, String catalogueId, Handler<AsyncResult<String>> readyHandler) {
        Set<String> messageDatasetIds = datassetFutures.keySet();
 
         dataAssetIdsOfCatalogue(catalogueId, piveauDatasetIds -> resolvePiveauIds(piveauDatasetIds,  result -> {
@@ -92,7 +107,7 @@ public class BrokerMessageController {
                    }
                     Collection<String> piveauIds = result.result().keySet();
                     if (piveauIds.isEmpty()&&messageDatasetIds.isEmpty()){
-                        readyHandler.handle(Future.succeededFuture("Connector successfully updated."));
+                        handleSucceededMessage(uri,readyHandler);
                     }
                     else{
                         for(String messageId : messageDatasetIds){
@@ -109,14 +124,14 @@ public class BrokerMessageController {
                         }
                         CompositeFuture.all(new ArrayList<>(datasetUpdateFutures.values())).setHandler(ac -> {
                             if(ac.succeeded()){
-                                readyHandler.handle(Future.succeededFuture("Connector successfully updated."));
+                                handleSucceededMessage(uri,readyHandler);
                             } else {
-                                readyHandler.handle(Future.failedFuture(ac.cause()));
+                                handleRejectionMessage(uri,readyHandler);
                             }
                         });
                     }
            } else {
-               readyHandler.handle(Future.failedFuture(result.cause()));
+                   handleRejectionMessage(uri,readyHandler);
            }
        }));
 
@@ -235,7 +250,7 @@ public class BrokerMessageController {
         });
     }
 
-    private void register(Connector connector, Handler<AsyncResult<String>> readyHandler) {
+    private void register(URI uri,Connector connector, Handler<AsyncResult<String>> readyHandler) {
         String catalogueId = UUID.randomUUID().toString();
         Future<String> catalogueFuture = Future.future();
         Map<String, Future<String>> datassetFutures = new HashMap<>();
@@ -243,7 +258,7 @@ public class BrokerMessageController {
         catalogueFuture.setHandler( catalogueTTLResult ->
                 handleCatalogueExternal(catalogueTTLResult,catalogueId ,piveauCatalogueReply ->
                         handleCatalogueInternal(piveauCatalogueReply, connector.getId().toString(), internalCatalogueReply ->
-                                handleDatasets(internalCatalogueReply, datassetFutures, readyHandler))));
+                                handleDatasets(uri,internalCatalogueReply, datassetFutures, readyHandler))));
     }
 
     private void handleCatalogueExternal(AsyncResult<String> catalogue,String catalogueId, Handler<AsyncResult<String>> next){
@@ -278,7 +293,7 @@ public class BrokerMessageController {
         }
     }
 
-    private void handleDatasets(AsyncResult<String> catalogueIdResult, Map<String, Future<String>> datassetFutures, Handler<AsyncResult<String>> readyHandler){
+    private void handleDatasets(URI uri,AsyncResult<String> catalogueIdResult, Map<String, Future<String>> datassetFutures, Handler<AsyncResult<String>> readyHandler){
         if (catalogueIdResult.succeeded()) {
             CompositeFuture.all(new ArrayList<>(datassetFutures.values())).setHandler( dataassetCreateReply -> {
                 if(dataassetCreateReply.succeeded()){
@@ -290,10 +305,10 @@ public class BrokerMessageController {
                     }
                     CompositeFuture.all(new ArrayList<>(dataassetCreateFutures.values())).setHandler( ac -> {
                         if(ac.succeeded()) {
-                            readyHandler.handle(Future.succeededFuture("Connector successfully registered."));
+                            handleSucceededMessage(uri,readyHandler);
                         } else {
                             LOGGER.error(ac.cause());
-                            readyHandler.handle(Future.failedFuture(ac.cause()));
+                            handleRejectionMessage(uri,readyHandler);
                         }
                     });
                 } else {
@@ -306,7 +321,7 @@ public class BrokerMessageController {
         }
     }
 
-    private void unregister(Connector connector, Handler<AsyncResult<String>> readyHandler) {
+    private void unregister(URI uri,Connector connector, Handler<AsyncResult<String>> readyHandler) {
         Map<String, Future> datasetDeleteFutures = new HashMap<>();
 
         resolveCatalogueId(connector.getId().toString(), catalogueIdResult -> {
@@ -336,11 +351,11 @@ public class BrokerMessageController {
                                     }
                                     else {
                                         LOGGER.error(datasetIdreply.cause());
-                                        readyHandler.handle(Future.failedFuture(datasetIdreply.cause()));
+                                        handleRejectionMessage(uri,readyHandler);
                                     }
                                 });
                             }
-                            handleCatalogue(new ArrayList<>(datasetDeleteFutures.values()), catalogueIdResult.result(), readyHandler);
+                            handleCatalogue(uri,new ArrayList<>(datasetDeleteFutures.values()), catalogueIdResult.result(), readyHandler);
                         } else {
                             LOGGER.error(piveauDatasetIds.cause());
                             readyHandler.handle(Future.failedFuture(piveauDatasetIds.cause()));
@@ -352,11 +367,11 @@ public class BrokerMessageController {
         });
     }
 
-    private void handleCatalogue(List<Future> datasetDeleteFutures, String catalogueIdResult, Handler<AsyncResult<String>> readyHandler){
+    private void handleCatalogue(URI uri,List<Future> datasetDeleteFutures, String catalogueIdResult, Handler<AsyncResult<String>> readyHandler){
         CompositeFuture.all(datasetDeleteFutures).setHandler(reply -> {
             if (reply.succeeded()) {
                 deleteCatalogueExternal(reply, catalogueIdResult, externalCatalogueDeleteReply ->
-                        deleteCatalogueInternal(externalCatalogueDeleteReply, catalogueIdResult,readyHandler));
+                        deleteCatalogueInternal(uri,externalCatalogueDeleteReply, catalogueIdResult,readyHandler));
             } else {
                 readyHandler.handle(Future.failedFuture(reply.cause()));
             }
@@ -417,15 +432,15 @@ public class BrokerMessageController {
         }
     }
 
-    private void deleteCatalogueInternal(AsyncResult<Void> reply, String catalogueInternalId, Handler<AsyncResult<String>> readyHandler){
+    private void deleteCatalogueInternal(URI uri,AsyncResult<Void> reply, String catalogueInternalId, Handler<AsyncResult<String>> readyHandler){
         if (reply.succeeded()){
             databaseService.update(DELETE_CAT_STATEMENT,new JsonArray().add(catalogueInternalId),deleteCatalogueReply ->{
                 if (deleteCatalogueReply.succeeded()) {
                     LOGGER.info("Catalogue From Database succeeded deleted");
-                    readyHandler.handle(Future.succeededFuture("Connector successfully unregistered."));
+                    handleSucceededMessage(uri,readyHandler);
                 } else {
                     LOGGER.error(deleteCatalogueReply.cause());
-                    readyHandler.handle(Future.failedFuture(deleteCatalogueReply.cause()));
+                    handleRejectionMessage(uri,readyHandler);
                 }
             });
         }
@@ -446,4 +461,105 @@ public class BrokerMessageController {
             }
         }
     }
+
+    private void createSucceededMessage(URI uriOfHeader,Handler<AsyncResult<MessageProcessedNotification>> resultHandler)  {
+        try {
+            String uuid = UUID.randomUUID().toString();
+            MessageProcessedNotification message = new MessageProcessedNotificationBuilder(new URI(uuid))
+                    ._correlationMessage_(uriOfHeader)
+                    ._issued_(getDate())
+                    ._modelVersion_("2.0.0")
+                    ._issuerConnector_(new URI("URI"))
+                    ._securityToken_( new DynamicAttributeTokenBuilder()
+                            ._tokenFormat_(TokenFormat.JWT)
+                            ._tokenValue_(getJWT())
+                            .build())
+                    .build();
+            resultHandler.handle(Future.succeededFuture(message));
+        } catch (URISyntaxException e) {
+            LOGGER.error(e);
+            resultHandler.handle(Future.failedFuture(e));
+        }
+    }
+
+    private void createRejectionMessage(URI uriOfHeader,Handler<AsyncResult<RejectionMessage>> resultHandler)  {
+        try {
+            String uuid = UUID.randomUUID().toString();
+            RejectionMessage message = new RejectionMessageBuilder(new URI(uuid))
+                    ._correlationMessage_(uriOfHeader)
+                    ._issued_(getDate())
+                    ._modelVersion_("2.0.0")
+                    ._issuerConnector_(new URI("URI"))
+                    ._securityToken_( new DynamicAttributeTokenBuilder()
+                            ._tokenFormat_(TokenFormat.JWT)
+                            ._tokenValue_(getJWT())
+                            .build())
+                    .build();
+            resultHandler.handle(Future.succeededFuture(message));
+        } catch (URISyntaxException e) {
+            LOGGER.error(e);
+            resultHandler.handle(Future.failedFuture(e));
+        }
+    }
+
+    private XMLGregorianCalendar getDate(){
+        GregorianCalendar c = new GregorianCalendar();
+        c.setTime(new Date());
+        try {
+            return DatatypeFactory.newInstance().newXMLGregorianCalendar(c);
+        } catch (DatatypeConfigurationException e) {
+            LOGGER.error(e);
+        }
+        return null;
+    }
+    private String getJWT(){
+        //TODO: implement DAPS and return real token
+        return "abcdefg12";
+    }
+
+    private Buffer createMultipartMessage(Message message, Connector connector){
+        ContentBody cb = new StringBody(Json.encodePrettily(message), org.apache.http.entity.ContentType.create("application/json"));
+        ContentBody result = new StringBody(Json.encodePrettily(connector), org.apache.http.entity.ContentType.create("application/json"));
+
+        MultipartEntityBuilder multipartEntityBuilder = MultipartEntityBuilder.create()
+                .setBoundary("IDSMSGPART")
+                .setCharset(StandardCharsets.UTF_8)
+                .setContentType(ContentType.APPLICATION_JSON)
+                .addPart("header", cb);
+                //.addPart("payload", result);
+
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        try {
+            multipartEntityBuilder.build().writeTo(out);
+            return Buffer.buffer().appendString(out.toString());
+        } catch (IOException e) {
+            LOGGER.error(e);
+        }
+        return null;
+    }
+
+    private void handleSucceededMessage (URI uri,Handler<AsyncResult<String>> readyHandler){
+        createSucceededMessage(uri,messageProcessedNotificationAsyncResult -> {
+            if (messageProcessedNotificationAsyncResult.succeeded()){
+                Buffer buffer = createMultipartMessage(messageProcessedNotificationAsyncResult.result(),null);
+                readyHandler.handle(Future.succeededFuture(buffer.toString()));
+            }
+            else {
+                readyHandler.handle(Future.failedFuture(messageProcessedNotificationAsyncResult.cause()));
+            }
+        });
+    }
+
+    private void handleRejectionMessage (URI uri,Handler<AsyncResult<String>> readyHandler){
+        createRejectionMessage(uri,rejectionMessageAsyncResult -> {
+            if (rejectionMessageAsyncResult.succeeded()){
+                Buffer buffer = createMultipartMessage(rejectionMessageAsyncResult.result(),null);
+                readyHandler.handle(Future.succeededFuture(buffer.toString()));
+            }
+            else {
+                readyHandler.handle(Future.failedFuture(rejectionMessageAsyncResult.cause()));
+            }
+        });
+    }
+
 }
