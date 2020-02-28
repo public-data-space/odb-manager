@@ -333,7 +333,7 @@ public class BrokerMessageController {
                             }
                             for (Resource dataasset : connector.getCatalog().getOffer()) {
                                 Future datasetDeleteFuture = Future.future();
-                                datasetDeleteFutures.put(connector.getCatalog().getId().toString(), datasetDeleteFuture);
+                                datasetDeleteFutures.put(dataasset.getId().toString(), datasetDeleteFuture);
                                 databaseService.query(SELECT_DS_STATEMENT, new JsonArray().add(dataasset.getId().toString()), datasetIdreply -> {
                                     if(datasetIdreply.succeeded()) {
                                         if(!datasetIdreply.result().isEmpty()) {
