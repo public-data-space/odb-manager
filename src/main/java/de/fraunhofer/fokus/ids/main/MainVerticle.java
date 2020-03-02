@@ -24,8 +24,9 @@ public class MainVerticle extends AbstractVerticle {
     private Logger LOGGER = LoggerFactory.getLogger(MainVerticle.class.getName());
     private Router router;
     private BrokerMessageController brokerMessageController;
+
     @Override
-    public void start (Future<Void> startFuture){
+    public void start(Future<Void> startFuture) {
         this.router = Router.router(vertx);
         this.brokerMessageController = new BrokerMessageController(vertx);
         DeploymentOptions deploymentOptions = new DeploymentOptions();
@@ -50,7 +51,7 @@ public class MainVerticle extends AbstractVerticle {
                 Future<Void> initFuture = Future.future();
                 new InitService(vertx).initDatabase(initFuture.completer());
 
-                if(initFuture.succeeded()) {
+                if (initFuture.succeeded()) {
                     router = Router.router(vertx);
                     createHttpServer(vertx);
                     startFuture.complete();
@@ -87,15 +88,16 @@ public class MainVerticle extends AbstractVerticle {
 
         router.post("/data").handler(routingContext -> brokerMessageController.getData(routingContext.getBodyAsString(),
                 reply -> reply(reply, routingContext.response())));
+        router.route("/about").handler(routingContext -> brokerMessageController.about(reply -> reply(reply, routingContext.response())));
         LOGGER.info("Starting odb manager ");
         server.requestHandler(router).listen(8092);
-        LOGGER.info("odb-manager deployed on port "+8080);
+        LOGGER.info("odb-manager deployed on port " + 8080);
     }
 
     private void reply(AsyncResult result, HttpServerResponse response) {
-        if(result.succeeded() && result.result() != null){
+        if (result.succeeded() && result.result() != null) {
             String entity = result.result().toString();
-            if (!response.headWritten()){
+            if (!response.headWritten()) {
                 response.putHeader("content-type", ContentType.APPLICATION_JSON.toString());
                 response.end(entity);
             }

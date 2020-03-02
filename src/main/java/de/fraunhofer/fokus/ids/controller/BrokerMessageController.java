@@ -5,6 +5,7 @@ import de.fraunhofer.fokus.ids.services.databaseService.DatabaseService;
 import de.fraunhofer.fokus.ids.services.dcatTransformerService.DCATTransformerService;
 import de.fraunhofer.fokus.ids.utils.IDSMessageParser;
 import de.fraunhofer.iais.eis.*;
+import de.fraunhofer.iais.eis.util.PlainLiteral;
 import io.vertx.core.*;
 import io.vertx.core.buffer.Buffer;
 import io.vertx.core.json.Json;
@@ -43,8 +44,10 @@ public class BrokerMessageController {
     private final static String RESOLVE_DS_STATEMENT = "SELECT * FROM datasets WHERE internal_id=?";
     private static final String DELETE_DS_UPDATE = "DELETE FROM datasets WHERE internal_id = ?";
     private static final String DELETE_DS_BY_IDS_ID_UPDATE = "DELETE FROM datasets WHERE external_id = ?";
-
     private final static String DELETE_CAT_STATEMENT = "DELETE FROM catalogues WHERE internal_id = ?";
+
+    private String INFO_MODEL_VERSION = "2.0.0";
+    private String[] SUPPORTED_INFO_MODEL_VERSIONS = {"2.0.0"};
 
     public BrokerMessageController(Vertx vertx) {
         this.brokerMessageService = BrokerMessageService.createProxy(vertx,"brokerMessageService");
@@ -569,6 +572,86 @@ public class BrokerMessageController {
             }
             else {
                 readyHandler.handle(Future.failedFuture(rejectionMessageAsyncResult.cause()));
+            }
+        });
+    }
+
+    public void about(Handler<AsyncResult<String>> resultHandler) {
+        JsonObject jsonObject = new JsonObject();
+        Future<Broker> brokerFuture = Future.future();
+        buildBroker(jsonObject,brokerFuture.completer());
+        SelfDescriptionResponse selfDescriptionResponse = buildSelfDescriptionResponse(jsonObject);
+        brokerFuture.setHandler(brokerAsyncResult ->{
+            ContentBody contentBody = new StringBody(Json.encodePrettily(selfDescriptionResponse), ContentType.create("application/json"));
+            ContentBody payload = new StringBody(Json.encodePrettily(brokerAsyncResult.result()), ContentType.create("application/json"));
+            MultipartEntityBuilder multipartEntityBuilder = MultipartEntityBuilder.create()
+                    .setBoundary("IDSMSGPART")
+                    .setCharset(StandardCharsets.UTF_8)
+                    .setContentType(ContentType.APPLICATION_JSON)
+                    .addPart("header", contentBody)
+                    .addPart("payload", payload);
+
+            ByteArrayOutputStream out = new ByteArrayOutputStream();
+            try {
+                multipartEntityBuilder.build().writeTo(out);
+            } catch (IOException e) {
+                LOGGER.error(e);
+                resultHandler.handle(Future.failedFuture(e.getMessage()));
+            }
+            resultHandler.handle(Future.succeededFuture(out.toString()));
+        });
+
+    }
+
+    private SelfDescriptionResponse buildSelfDescriptionResponse(JsonObject jsonObject){
+
+        try {
+            return new SelfDescriptionResponseBuilder(new URI("broker#SelfDescriptionResponse"))
+                    ._issued_(getDate())
+                    ._modelVersion_(INFO_MODEL_VERSION)
+                    .build();
+        } catch (URISyntaxException e) {
+            LOGGER.error(e);
+        }
+        return null;
+    }
+
+    private void buildBroker(JsonObject config, Handler<AsyncResult<Broker>> next){
+        Future<ArrayList<URI>> listFutureExternalIds = Future.future();
+        listOfExternalIds(listFutureExternalIds.completer());
+        listFutureExternalIds.setHandler(arrayListAsyncResult -> {
+            try {
+                BrokerBuilder brokerBuilder = new BrokerBuilder((new URI( "payload#Broker")))
+                        ._maintainer_(new URI("maintainer"))
+                        ._version_("0.0.1")
+                        ._curator_(new URI("curator"))
+                        ._connector_(listFutureExternalIds.result())
+                        ._outboundModelVersion_(INFO_MODEL_VERSION)
+                        ._inboundModelVersion_(new ArrayList<>(Arrays.asList(SUPPORTED_INFO_MODEL_VERSIONS)));
+                next.handle(Future.succeededFuture(brokerBuilder.build()));
+            } catch (Exception e) {
+                LOGGER.error(e);
+                next.handle(Future.failedFuture(e.getMessage()));
+            }
+        });
+    }
+
+    private void listOfExternalIds(Handler<AsyncResult<ArrayList<URI>>> next ){
+        ArrayList<URI> externalIds = new ArrayList<>();
+        databaseService.query("SELECT * FROM catalogues", new JsonArray(), data -> {
+            if (data.succeeded()) {
+                for (JsonObject jsonObject:data.result()){
+                    try {
+                        externalIds.add(new URI(jsonObject.getString("external_id")));
+                    } catch (URISyntaxException e) {
+                        e.printStackTrace();
+                    }
+                }
+                    next.handle(Future.succeededFuture(externalIds));
+            }
+            else {
+                LOGGER.error(data.cause());
+                next.handle(Future.failedFuture(data.cause()));
             }
         });
     }
