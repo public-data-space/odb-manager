@@ -62,6 +62,10 @@ public class IDSService {
         handleBrokerSelfDescription(resultHandler, selfDescriptionResponse, brokerFuture);
     }
 
+    public void queryMessage(URI uri, Handler<AsyncResult<String>> resultHandler) {
+       LOGGER.info("Yeah");
+    }
+
     private void handleBrokerSelfDescription(Handler<AsyncResult<String>> resultHandler, SelfDescriptionResponse selfDescriptionResponse, Future<Broker> brokerFuture) {
         handleBrokerFuture(brokerFuture, contentBodyAsyncResult -> {
             if (contentBodyAsyncResult.succeeded()) {

@@ -53,9 +53,12 @@ public class BrokerMessageController {
                     LOGGER.info("UpdateMessage received.");
                     idsService.update(uri, connector, readyHandler);
                 } else if (header instanceof SelfDescriptionRequest) {
-                    LOGGER.info("UpdateMessage received.");
+                    LOGGER.info("SelfDescriptionRequest received.");
                     idsService.selfDescriptionRequest(uri, readyHandler);
-                } else {
+                }else if (header instanceof QueryMessage) {
+                    LOGGER.info("QueryMessage received.");
+                    idsService.queryMessage(uri, readyHandler);
+                }else {
                     LOGGER.error(RejectionReason.MESSAGE_TYPE_NOT_SUPPORTED);
                     idsService.handleRejectionMessage(RejectionReason.MESSAGE_TYPE_NOT_SUPPORTED, uri, readyHandler);
                 }
