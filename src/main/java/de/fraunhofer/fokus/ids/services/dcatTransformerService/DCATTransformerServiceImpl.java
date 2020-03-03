@@ -1,11 +1,16 @@
 package de.fraunhofer.fokus.ids.services.dcatTransformerService;
 
+import de.fraunhofer.fokus.ids.utils.JsonLdContextResolver;
 import de.fraunhofer.iais.eis.*;
 import de.fraunhofer.iais.eis.util.PlainLiteral;
 import io.vertx.core.AsyncResult;
 import io.vertx.core.Future;
 import io.vertx.core.Handler;
 import io.vertx.core.json.Json;
+import io.vertx.core.json.JsonObject;
+import io.vertx.core.logging.Logger;
+import io.vertx.core.logging.LoggerFactory;
+import org.apache.commons.io.IOUtils;
 import org.apache.jena.rdf.model.Model;
 import org.apache.jena.rdf.model.ModelFactory;
 import org.apache.jena.rdf.model.Property;
@@ -19,8 +24,12 @@ import java.util.ArrayList;
 import java.util.UUID;
 
 public class DCATTransformerServiceImpl implements DCATTransformerService {
+    private final Logger LOGGER = LoggerFactory.getLogger(DCATTransformerServiceImpl.class.getName());
 
-    public DCATTransformerServiceImpl(Handler<AsyncResult<DCATTransformerService>> readyHandler){
+    JsonLdContextResolver jsonLdContextResolver;
+
+    public DCATTransformerServiceImpl(JsonLdContextResolver jsonLdContextResolver, Handler<AsyncResult<DCATTransformerService>> readyHandler){
+        this.jsonLdContextResolver = jsonLdContextResolver;
         readyHandler.handle(Future.succeededFuture(this));
     }
 
@@ -48,7 +57,8 @@ public class DCATTransformerServiceImpl implements DCATTransformerService {
             model.write(baos, "TTL");
             readyHandler.handle(Future.succeededFuture(baos.toString()));
         } catch (IOException e) {
-            e.printStackTrace();
+            LOGGER.error(e);
+            readyHandler.handle(Future.failedFuture(e));
         }
 
         return this;
@@ -105,9 +115,33 @@ public class DCATTransformerServiceImpl implements DCATTransformerService {
             model.write(baos, "TTL");
             readyHandler.handle(Future.succeededFuture(baos.toString()));
         } catch (IOException e) {
-            e.printStackTrace();
+            LOGGER.error(e);
+            readyHandler.handle(Future.failedFuture(e));
         }
 
+        return this;
+    }
+
+    @Override
+    public DCATTransformerService transformJsonForVirtuoso(String json, Handler<AsyncResult<String>> readyHandler) {
+        Model model = ModelFactory.createDefaultModel();
+        JsonObject connector = new JsonObject(json);
+        jsonLdContextResolver.resolve( ac -> {
+            if(ac.succeeded()){
+                connector.put("@context", ac.result().getJsonObject("@context"));
+                try(ByteArrayOutputStream baos = new ByteArrayOutputStream()){
+                    model.read(IOUtils.toInputStream(connector.toString(), "UTF-8"), null, "JSON-LD");
+                    model.write(baos, "TTL");
+                    readyHandler.handle(Future.succeededFuture(baos.toString()));
+                } catch (Exception e) {
+                    LOGGER.error(e);
+                    readyHandler.handle(Future.failedFuture(e));
+                }
+            }
+            else {
+                readyHandler.handle(Future.failedFuture(ac.cause()));
+            }
+        });
         return this;
     }
 

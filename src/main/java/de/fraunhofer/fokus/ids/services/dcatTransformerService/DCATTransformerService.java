@@ -1,5 +1,6 @@
 package de.fraunhofer.fokus.ids.services.dcatTransformerService;
 
+import de.fraunhofer.fokus.ids.utils.JsonLdContextResolver;
 import io.vertx.codegen.annotations.Fluent;
 import io.vertx.codegen.annotations.GenIgnore;
 import io.vertx.codegen.annotations.ProxyGen;
@@ -18,9 +19,12 @@ public interface DCATTransformerService {
     @Fluent
     DCATTransformerService transformDataset(String datasetJson, Handler<AsyncResult<String>> readyHandler);
 
+    @Fluent
+    DCATTransformerService transformJsonForVirtuoso(String connectorJson, Handler<AsyncResult<String>> readyHandler);
+
     @GenIgnore
-    static DCATTransformerService create(Handler<AsyncResult<DCATTransformerService>> readyHandler) {
-        return new DCATTransformerServiceImpl(readyHandler);
+    static DCATTransformerService create(JsonLdContextResolver jsonLdContextResolver, Handler<AsyncResult<DCATTransformerService>> readyHandler) {
+        return new DCATTransformerServiceImpl(jsonLdContextResolver, readyHandler);
     }
 
     @GenIgnore

@@ -1,5 +1,6 @@
 package de.fraunhofer.fokus.ids.services.dcatTransformerService;
 
+import de.fraunhofer.fokus.ids.utils.JsonLdContextResolver;
 import io.vertx.core.AbstractVerticle;
 import io.vertx.core.Future;
 import io.vertx.core.logging.Logger;
@@ -12,7 +13,7 @@ public class DCATTransformerServiceVerticle extends AbstractVerticle {
     @Override
     public void start(Future<Void> startFuture) {
 
-        DCATTransformerService.create(ready -> {
+        DCATTransformerService.create(new JsonLdContextResolver(vertx), ready -> {
             if (ready.succeeded()) {
                 ServiceBinder binder = new ServiceBinder(vertx);
                 binder
