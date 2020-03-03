@@ -59,14 +59,14 @@ public class IDSService {
         SelfDescriptionResponse selfDescriptionResponse = buildSelfDescriptionResponse(jsonObject);
         Future<Broker> brokerFuture = Future.future();
         buildBroker(jsonObject, brokerFuture.completer());
-        handleBrokerSelfDescription(resultHandler, selfDescriptionResponse, brokerFuture);
+        handleBrokerSelfDescription(uri,resultHandler, selfDescriptionResponse, brokerFuture);
     }
 
     public void queryMessage(URI uri, Handler<AsyncResult<String>> resultHandler) {
        LOGGER.info("Yeah");
     }
 
-    private void handleBrokerSelfDescription(Handler<AsyncResult<String>> resultHandler, SelfDescriptionResponse selfDescriptionResponse, Future<Broker> brokerFuture) {
+    private void handleBrokerSelfDescription(URI uri,Handler<AsyncResult<String>> resultHandler, SelfDescriptionResponse selfDescriptionResponse, Future<Broker> brokerFuture) {
         handleBrokerFuture(brokerFuture, contentBodyAsyncResult -> {
             if (contentBodyAsyncResult.succeeded()) {
                 ContentBody contentBody = new StringBody(Json.encodePrettily(selfDescriptionResponse), ContentType.create("application/json"));
@@ -83,11 +83,11 @@ public class IDSService {
                     multipartEntityBuilder.build().writeTo(out);
                 } catch (IOException e) {
                     LOGGER.error(e);
-                    resultHandler.handle(Future.failedFuture(e.getMessage()));
+                    handleRejectionMessage(RejectionReason.INTERNAL_RECIPIENT_ERROR,uri,resultHandler);
                 }
                 resultHandler.handle(Future.succeededFuture(out.toString()));
             } else {
-                resultHandler.handle(Future.failedFuture(contentBodyAsyncResult.cause()));
+                handleRejectionMessage(RejectionReason.INTERNAL_RECIPIENT_ERROR,uri,resultHandler);
             }
         });
     }
