@@ -5,6 +5,9 @@ import de.fraunhofer.fokus.ids.services.brokerMessageService.BrokerMessageServic
 import de.fraunhofer.fokus.ids.services.databaseService.DatabaseServiceVerticle;
 import de.fraunhofer.fokus.ids.services.dcatTransformerService.DCATTransformerServiceVerticle;
 import de.fraunhofer.fokus.ids.utils.InitService;
+import de.fraunhofer.fokus.ids.utils.TSConnector;
+import io.vertx.circuitbreaker.CircuitBreaker;
+import io.vertx.circuitbreaker.CircuitBreakerOptions;
 import io.vertx.core.*;
 import io.vertx.core.http.HttpMethod;
 import io.vertx.core.http.HttpServer;
@@ -12,6 +15,7 @@ import io.vertx.core.http.HttpServerResponse;
 import io.vertx.core.logging.Logger;
 import io.vertx.core.logging.LoggerFactory;
 import io.vertx.ext.web.Router;
+import io.vertx.ext.web.client.WebClient;
 import io.vertx.ext.web.handler.BodyHandler;
 import io.vertx.ext.web.handler.CorsHandler;
 import org.apache.http.entity.ContentType;
@@ -24,13 +28,17 @@ public class MainVerticle extends AbstractVerticle {
     private Logger LOGGER = LoggerFactory.getLogger(MainVerticle.class.getName());
     private Router router;
     private BrokerMessageController brokerMessageController;
-
     @Override
     public void start(Future<Void> startFuture) {
         this.router = Router.router(vertx);
-        this.brokerMessageController = new BrokerMessageController(vertx);
         DeploymentOptions deploymentOptions = new DeploymentOptions();
         deploymentOptions.setWorker(true);
+        WebClient webClient = WebClient.create(vertx);
+        CircuitBreaker breaker = CircuitBreaker.create("virtuoso-breaker", vertx, new CircuitBreakerOptions().setMaxRetries(5))
+                .retryPolicy(count -> count * 1000L);
+        TSConnector connector = TSConnector.create(webClient, breaker);
+        this.brokerMessageController = new BrokerMessageController(connector,vertx);
+
 
         Future<String> deployment = Future.succeededFuture();
         deployment.compose(id1 -> {
@@ -89,6 +97,7 @@ public class MainVerticle extends AbstractVerticle {
         router.post("/data").handler(routingContext -> brokerMessageController.getData(routingContext.getBodyAsString(),
                 reply -> reply(reply, routingContext.response())));
         router.route("/about").handler(routingContext -> brokerMessageController.about(reply -> reply(reply, routingContext.response())));
+        router.route("/connector").handler(routingContext -> brokerMessageController.getGraph(reply -> reply(reply, routingContext.response())));
         LOGGER.info("Starting odb manager ");
         server.requestHandler(router).listen(8092);
         LOGGER.info("odb-manager deployed on port " + 8080);

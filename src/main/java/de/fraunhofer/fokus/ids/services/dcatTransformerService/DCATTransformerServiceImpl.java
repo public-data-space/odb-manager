@@ -124,15 +124,12 @@ public class DCATTransformerServiceImpl implements DCATTransformerService {
 
     @Override
     public DCATTransformerService transformJsonForVirtuoso(String json, Handler<AsyncResult<String>> readyHandler) {
-        Model model = ModelFactory.createDefaultModel();
         JsonObject connector = new JsonObject(json);
         jsonLdContextResolver.resolve( ac -> {
             if(ac.succeeded()){
                 connector.put("@context", ac.result().getJsonObject("@context"));
-                try(ByteArrayOutputStream baos = new ByteArrayOutputStream()){
-                    model.read(IOUtils.toInputStream(connector.toString(), "UTF-8"), null, "JSON-LD");
-                    model.write(baos, "TTL");
-                    readyHandler.handle(Future.succeededFuture(baos.toString()));
+                try{
+                    readyHandler.handle(Future.succeededFuture(connector.toString()));
                 } catch (Exception e) {
                     LOGGER.error(e);
                     readyHandler.handle(Future.failedFuture(e));

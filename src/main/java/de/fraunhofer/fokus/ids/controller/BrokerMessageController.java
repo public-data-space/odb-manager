@@ -5,12 +5,14 @@ import de.fraunhofer.fokus.ids.services.brokerMessageService.BrokerMessageServic
 import de.fraunhofer.fokus.ids.services.databaseService.DatabaseService;
 import de.fraunhofer.fokus.ids.services.dcatTransformerService.DCATTransformerService;
 import de.fraunhofer.fokus.ids.utils.IDSMessageParser;
+import de.fraunhofer.fokus.ids.utils.TSConnector;
 import de.fraunhofer.iais.eis.*;
 import io.vertx.core.*;
 import io.vertx.core.json.JsonObject;
 import io.vertx.core.logging.Logger;
 import io.vertx.core.logging.LoggerFactory;
 import org.apache.http.entity.mime.content.ContentBody;
+import org.apache.jena.rdf.model.Model;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -24,8 +26,8 @@ public class BrokerMessageController {
     private DatabaseService databaseService;
     private IDSService idsService;
 
-    public BrokerMessageController(Vertx vertx) {
-        this.idsService = new IDSService(vertx);
+    public BrokerMessageController(TSConnector connector,Vertx vertx) {
+        this.idsService = new IDSService(connector,vertx);
         this.brokerMessageService = BrokerMessageService.createProxy(vertx, "brokerMessageService");
         this.dcatTransformerService = DCATTransformerService.createProxy(vertx, "dcatTransformerService");
         this.databaseService = DatabaseService.createProxy(vertx, "databaseService");
@@ -68,6 +70,10 @@ public class BrokerMessageController {
             }
         }
 
+    }
+
+    public void getGraph(Handler<AsyncResult<String>> resultHandler){
+        idsService.getGraph(resultHandler);
     }
 
     public void about(Handler<AsyncResult<String>> resultHandler) {

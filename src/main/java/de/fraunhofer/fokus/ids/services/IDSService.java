@@ -4,18 +4,27 @@ import de.fraunhofer.fokus.ids.services.brokerMessageService.BrokerMessageServic
 import de.fraunhofer.fokus.ids.services.databaseService.DatabaseService;
 import de.fraunhofer.fokus.ids.services.dcatTransformerService.DCATTransformerService;
 import de.fraunhofer.fokus.ids.utils.IDSMessageParser;
+import de.fraunhofer.fokus.ids.utils.TSConnector;
 import de.fraunhofer.iais.eis.*;
 import io.vertx.core.*;
 import io.vertx.core.buffer.Buffer;
+import io.vertx.core.http.HttpMethod;
 import io.vertx.core.json.Json;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 import io.vertx.core.logging.Logger;
 import io.vertx.core.logging.LoggerFactory;
+import io.vertx.ext.web.client.HttpRequest;
+import io.vertx.ext.web.client.HttpResponse;
+import io.vertx.ext.web.client.WebClient;
+import org.apache.commons.io.IOUtils;
 import org.apache.http.entity.ContentType;
 import org.apache.http.entity.mime.MultipartEntityBuilder;
 import org.apache.http.entity.mime.content.ContentBody;
 import org.apache.http.entity.mime.content.StringBody;
+import org.apache.jena.rdf.model.Model;
+import org.apache.jena.rdf.model.ModelFactory;
+import org.apache.jena.riot.Lang;
 
 import javax.xml.datatype.DatatypeConfigurationException;
 import javax.xml.datatype.DatatypeFactory;
@@ -35,7 +44,7 @@ public class IDSService {
     private DatabaseService databaseService;
     private BrokerMessageService brokerMessageService;
     private DCATTransformerService dcatTransformerService;
-
+    private TSConnector tsConnector;
 
     private final static String INSERT_CAT_STATEMENT = "INSERT INTO catalogues (created_at, updated_at, external_id, internal_id) values (NOW(),NOW(),?,?)";
     private final static String INSERT_DS_STATEMENT = "INSERT INTO datasets (created_at, updated_at, external_id, internal_id) values (NOW(),NOW(),?,?)";
@@ -48,7 +57,8 @@ public class IDSService {
     private String INFO_MODEL_VERSION = "2.0.0";
     private String[] SUPPORTED_INFO_MODEL_VERSIONS = {"2.0.0"};
 
-    public IDSService(Vertx vertx) {
+    public IDSService(TSConnector connector,Vertx vertx) {
+        this.tsConnector = connector;
         this.databaseService = DatabaseService.createProxy(vertx, "databaseService");
         this.brokerMessageService = BrokerMessageService.createProxy(vertx, "brokerMessageService");
         this.dcatTransformerService = DCATTransformerService.createProxy(vertx, "dcatTransformerService");
@@ -122,15 +132,52 @@ public class IDSService {
         });
     }
 
+    public void getGraph(Handler<AsyncResult<String>> resultHandler){
+            tsConnector.getGraph("http://www.example.com/other/graph",resultHandler);
+    }
+
+    private void putGraphConnector(Future<String> connectorFuture, Handler<AsyncResult<Void>> readyHandler){
+        connectorFuture.setHandler(r->{
+            String con = r.result();
+            String graph = new JsonObject(con).getString("@id");
+            Model model = ModelFactory.createDefaultModel();
+            try{
+                model.read(IOUtils.toInputStream(con , "UTF-8"), null, "JSON-LD");
+                tsConnector.putGraph(graph,model,null,r2->{
+                    if (r2.succeeded()) {
+                        LOGGER.info("send connector's graph succeeded");
+                        readyHandler.handle(Future.succeededFuture());
+                    } else {
+                        LOGGER.info("send connector's graph failed "+r2.cause());
+                        readyHandler.handle(Future.failedFuture(r2.cause()));
+                    }
+
+                });
+            } catch (Exception e) {
+                LOGGER.error(e);
+                readyHandler.handle(Future.failedFuture(e));
+            }
+        });
+    }
+
     public void register(URI uri, Connector connector, Handler<AsyncResult<String>> readyHandler) {
         String catalogueId = UUID.randomUUID().toString();
         Future<String> catalogueFuture = Future.future();
+        Future<String> connectorFuture = Future.future();
         Map<String, Future<String>> datassetFutures = new HashMap<>();
-        initTransformations(connector, catalogueFuture, datassetFutures);
-        catalogueFuture.setHandler(catalogueTTLResult ->
-                handleCatalogueExternal(catalogueTTLResult, catalogueId, piveauCatalogueReply ->
-                        handleCatalogueInternal(piveauCatalogueReply, connector.getId().toString(), internalCatalogueReply ->
-                                handleDatasets(uri, internalCatalogueReply, datassetFutures, readyHandler))));
+        initTransformations2(connector,connectorFuture, catalogueFuture, datassetFutures);
+        putGraphConnector(connectorFuture,connectorFutureAsync->{
+           if (connectorFutureAsync.succeeded()){
+               catalogueFuture.setHandler(catalogueTTLResult ->
+                       handleCatalogueExternal(catalogueTTLResult, catalogueId, piveauCatalogueReply ->
+                               handleCatalogueInternal(piveauCatalogueReply, connector.getId().toString(), internalCatalogueReply ->
+                                       handleDatasets(uri, internalCatalogueReply, datassetFutures, readyHandler))));
+           }
+           else {
+               handleRejectionMessage(RejectionReason.INTERNAL_RECIPIENT_ERROR, uri, readyHandler);
+           }
+        });
+
     }
 
     public void unregister(URI uri, Connector connector, Handler<AsyncResult<String>> readyHandler) {
@@ -272,6 +319,7 @@ public class IDSService {
                         dataassetCreateFutures.put(datasetExternalId, Future.future());
                         String datasetId = UUID.randomUUID().toString();
                         createDataSet(datassetFutures, datasetExternalId, datasetId, catalogueIdResult.result(), dataassetCreateFutures);
+                        tsConnector.putGraph(datasetExternalId,null,datassetFutures.get(datasetExternalId).result(),r->{});
                     }
                     CompositeFuture.all(new ArrayList<>(dataassetCreateFutures.values())).setHandler(ac -> {
                         if (ac.succeeded()) {
@@ -473,6 +521,19 @@ public class IDSService {
     private void initTransformations(Connector connector, Future<String> catalogueFuture, Map<String, Future<String>> datassetFutures) {
         String con = Json.encode(connector);
         dcatTransformerService.transformCatalogue(con, catalogueFuture.completer());
+        if (connector.getCatalog() != null) {
+            for (Resource resource : connector.getCatalog().getOffer()) {
+                Future<String> dataassetFuture = Future.future();
+                datassetFutures.put(resource.getId().toString(), dataassetFuture);
+                dcatTransformerService.transformDataset(Json.encode(resource), dataassetFuture.completer());
+            }
+        }
+    }
+
+    private void initTransformations2(Connector connector,Future<String> connectorFuture, Future<String> catalogueFuture, Map<String, Future<String>> datassetFutures) {
+        String con = Json.encode(connector);
+        dcatTransformerService.transformCatalogue(con, catalogueFuture.completer());
+        dcatTransformerService.transformJsonForVirtuoso(con,connectorFuture.completer());
         if (connector.getCatalog() != null) {
             for (Resource resource : connector.getCatalog().getOffer()) {
                 Future<String> dataassetFuture = Future.future();
