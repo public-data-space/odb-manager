@@ -114,16 +114,51 @@ public class IDSService {
 
     }
 
+    private void handleUpdateConnectorGraph (URI uri,AsyncResult<String> next,Future<String> connectorFuture,Handler<AsyncResult<String>> readyHandler){
+        if (next.succeeded()){
+            connectorFuture.setHandler(r -> {
+                if (r.succeeded()){
+                    deleteConnectorGraph(new JsonObject(connectorFuture.result()).getString("@id"),deleteAsync->{});
+                    putGraphConnector(uri,connectorFuture,readyHandler);
+                }
+                else {
+                    LOGGER.info("connector future failed");
+                    readyHandler.handle(Future.failedFuture(r.cause()));
+                }
+            });
+        }
+        else {
+            readyHandler.handle(Future.failedFuture(next.cause()));
+        }
+
+    }
+
+    private void deleteConnectorGraph(String connectorId , Handler<AsyncResult<String>> readyHandler){
+                    tsConnector.deleteGraph(connectorId,httpResponseAsyncResult -> {
+                        if (httpResponseAsyncResult.succeeded()){
+                            LOGGER.info("delete Connector's Graph succeeded");
+                            readyHandler.handle(Future.succeededFuture("delete Connector's Graph succeeded"));
+                        }
+                        else{
+                            LOGGER.info("delete Connector's Graph failed");
+                            readyHandler.handle(Future.failedFuture(httpResponseAsyncResult.cause()));
+                        }
+                    });
+    }
+
     public void update(URI uri, Connector connector, Handler<AsyncResult<String>> readyHandler) {
         resolveCatalogueId(connector.getId().toString(), next -> {
             if (next.succeeded()) {
                 Future<String> catalogueFuture = Future.future();
+                Future<String> connectorFuture = Future.future();
                 Map<String, Future<String>> datassetFutures = new HashMap<>();
-                initTransformations(connector, catalogueFuture, datassetFutures);
+                initTransformations(connector,connectorFuture, catalogueFuture, datassetFutures);
                 catalogueFuture.setHandler(reply -> {
-                    handleCatalogueExternal(reply, next.result(), next2 -> {
-                        updateDatasets(uri, datassetFutures, next.result(), readyHandler);
-                    });
+                    handleUpdateConnectorGraph(uri,reply,connectorFuture,next1->
+                            handleCatalogueExternal(reply, next.result(), next2 -> {
+                                updateDatasets(connector,uri, datassetFutures, next.result(), readyHandler);
+                            }) );
+
                 });
             } else {
                 LOGGER.error(next.cause());
@@ -133,26 +168,30 @@ public class IDSService {
     }
 
     public void getGraph(Handler<AsyncResult<String>> resultHandler){
-            tsConnector.getGraph("http://www.example.com/other/graph",resultHandler);
+            tsConnector.getGraph("http://fokus.fraunhofer.de/odc#DataResource1",resultHandler);
     }
 
-    private void putGraphConnector(Future<String> connectorFuture, Handler<AsyncResult<Void>> readyHandler){
+    private void handlePutGraph(URI uri,String graph,Model model,Handler<AsyncResult<String>> readyHandler){
+        tsConnector.putGraph(graph,model,r2->{
+            if (r2.succeeded()) {
+                LOGGER.info("send graph succeeded");
+                handleSucceededMessage(uri, readyHandler);
+            } else {
+                LOGGER.info("send graph failed "+r2.cause());
+                readyHandler.handle(Future.failedFuture(r2.cause()));
+            }
+
+        });
+    }
+
+    private void putGraphConnector(URI uri,Future<String> connectorFuture, Handler<AsyncResult<String>> readyHandler){
         connectorFuture.setHandler(r->{
             String con = r.result();
             String graph = new JsonObject(con).getString("@id");
             Model model = ModelFactory.createDefaultModel();
             try{
                 model.read(IOUtils.toInputStream(con , "UTF-8"), null, "JSON-LD");
-                tsConnector.putGraph(graph,model,null,r2->{
-                    if (r2.succeeded()) {
-                        LOGGER.info("send connector's graph succeeded");
-                        readyHandler.handle(Future.succeededFuture());
-                    } else {
-                        LOGGER.info("send connector's graph failed "+r2.cause());
-                        readyHandler.handle(Future.failedFuture(r2.cause()));
-                    }
-
-                });
+                handlePutGraph(uri,graph,model,readyHandler);
             } catch (Exception e) {
                 LOGGER.error(e);
                 readyHandler.handle(Future.failedFuture(e));
@@ -160,24 +199,39 @@ public class IDSService {
         });
     }
 
+    private void putDatasetsGraph(URI uri,Connector connector, Handler<AsyncResult<String>> readyHandler){
+            for (Resource resource:connector.getCatalog().getOffer()){
+                String dataset = Json.encode(resource);
+                dcatTransformerService.transformJsonForVirtuoso(dataset,stringAsyncResult -> {
+                    Model model = ModelFactory.createDefaultModel();
+                    try {
+                        model.read(IOUtils.toInputStream(stringAsyncResult.result(), "UTF-8"), null, "JSON-LD");
+                        handlePutGraph(uri,resource.getId().toString(),model,readyHandler);
+                    } catch (IOException e) {
+                        e.printStackTrace();
+                    }
+                });
+            }
+    }
+
     public void register(URI uri, Connector connector, Handler<AsyncResult<String>> readyHandler) {
         String catalogueId = UUID.randomUUID().toString();
         Future<String> catalogueFuture = Future.future();
         Future<String> connectorFuture = Future.future();
-        Map<String, Future<String>> datassetFutures = new HashMap<>();
-        initTransformations2(connector,connectorFuture, catalogueFuture, datassetFutures);
-        putGraphConnector(connectorFuture,connectorFutureAsync->{
-           if (connectorFutureAsync.succeeded()){
-               catalogueFuture.setHandler(catalogueTTLResult ->
-                       handleCatalogueExternal(catalogueTTLResult, catalogueId, piveauCatalogueReply ->
-                               handleCatalogueInternal(piveauCatalogueReply, connector.getId().toString(), internalCatalogueReply ->
-                                       handleDatasets(uri, internalCatalogueReply, datassetFutures, readyHandler))));
-           }
-           else {
-               handleRejectionMessage(RejectionReason.INTERNAL_RECIPIENT_ERROR, uri, readyHandler);
-           }
-        });
 
+        Map<String, Future<String>> datassetFutures = new HashMap<>();
+        initTransformations(connector,connectorFuture, catalogueFuture, datassetFutures);
+        putGraphConnector(uri,connectorFuture,connectorFutureAsync->{
+            if (connectorFutureAsync.succeeded()){
+                catalogueFuture.setHandler(catalogueTTLResult ->
+                        handleCatalogueExternal(catalogueTTLResult, catalogueId, piveauCatalogueReply ->
+                                handleCatalogueInternal(piveauCatalogueReply, connector.getId().toString(), internalCatalogueReply ->
+                                        handleDatasets(uri,connector,internalCatalogueReply, datassetFutures,readyHandler))));
+            }
+            else {
+                handleRejectionMessage(RejectionReason.INTERNAL_RECIPIENT_ERROR, uri, readyHandler);
+            }
+       });
     }
 
     public void unregister(URI uri, Connector connector, Handler<AsyncResult<String>> readyHandler) {
@@ -185,7 +239,14 @@ public class IDSService {
 
         resolveCatalogueId(connector.getId().toString(), catalogueIdResult -> {
             if (catalogueIdResult.succeeded()) {
+                tsConnector.deleteGraph(connector.getId().toString(),reply->{});
                 dataAssetIdsOfCatalogue(catalogueIdResult.result(), piveauDatasetIds -> {
+
+                    resolvePiveauIds(piveauDatasetIds,mapAsyncResult -> {
+                        for (String externalId : mapAsyncResult.result().keySet()){
+                            tsConnector.deleteGraph(externalId,reply->{});
+                        }});
+
                     if (piveauDatasetIds.succeeded()) {
                         if (!piveauDatasetIds.result().isEmpty()) {
                             for (String id : piveauDatasetIds.result()) {
@@ -268,17 +329,24 @@ public class IDSService {
         }
     }
 
-    private void updateDatasets(URI uri, Map<String, Future<String>> datassetFutures, String catalogueId, Handler<AsyncResult<String>> readyHandler) {
+    private void updateDatasets(Connector connector,URI uri, Map<String, Future<String>> datassetFutures, String catalogueId, Handler<AsyncResult<String>> readyHandler) {
         Set<String> messageDatasetIds = datassetFutures.keySet();
 
         dataAssetIdsOfCatalogue(catalogueId, piveauDatasetIds -> resolvePiveauIds(piveauDatasetIds, result -> {
             if (result.succeeded()) {
                 Map<String, Future> datasetUpdateFutures = new HashMap<>();
                 Set<String> availableDatasetIds = new HashSet(result.result().keySet());
+
+                for (String id :availableDatasetIds) {
+                    tsConnector.deleteGraph(id,r->{});
+                }
+                putDatasetsGraph(uri,connector,r->{});
+
                 availableDatasetIds.addAll(messageDatasetIds);
                 for (String messageDatasetId : availableDatasetIds) {
                     datasetUpdateFutures.put(messageDatasetId, Future.future());
                 }
+
                 Collection<String> piveauIds = result.result().keySet();
                 if (piveauIds.isEmpty() && messageDatasetIds.isEmpty()) {
                     handleSucceededMessage(uri, readyHandler);
@@ -310,7 +378,7 @@ public class IDSService {
 
     }
 
-    private void handleDatasets(URI uri, AsyncResult<String> catalogueIdResult, java.util.Map<String, Future<String>> datassetFutures, Handler<AsyncResult<String>> readyHandler) {
+    private void handleDatasets(URI uri,Connector connector,AsyncResult<String> catalogueIdResult, java.util.Map<String, Future<String>> datassetFutures, Handler<AsyncResult<String>> readyHandler) {
         if (catalogueIdResult.succeeded()) {
             CompositeFuture.all(new ArrayList<>(datassetFutures.values())).setHandler(dataassetCreateReply -> {
                 if (dataassetCreateReply.succeeded()) {
@@ -319,11 +387,10 @@ public class IDSService {
                         dataassetCreateFutures.put(datasetExternalId, Future.future());
                         String datasetId = UUID.randomUUID().toString();
                         createDataSet(datassetFutures, datasetExternalId, datasetId, catalogueIdResult.result(), dataassetCreateFutures);
-                        tsConnector.putGraph(datasetExternalId,null,datassetFutures.get(datasetExternalId).result(),r->{});
                     }
                     CompositeFuture.all(new ArrayList<>(dataassetCreateFutures.values())).setHandler(ac -> {
                         if (ac.succeeded()) {
-                            handleSucceededMessage(uri, readyHandler);
+                            putDatasetsGraph(uri,connector,readyHandler);
                         } else {
                             LOGGER.error(ac.cause());
                             handleRejectionMessage(RejectionReason.INTERNAL_RECIPIENT_ERROR, uri, readyHandler);
@@ -518,19 +585,7 @@ public class IDSService {
         }
     }
 
-    private void initTransformations(Connector connector, Future<String> catalogueFuture, Map<String, Future<String>> datassetFutures) {
-        String con = Json.encode(connector);
-        dcatTransformerService.transformCatalogue(con, catalogueFuture.completer());
-        if (connector.getCatalog() != null) {
-            for (Resource resource : connector.getCatalog().getOffer()) {
-                Future<String> dataassetFuture = Future.future();
-                datassetFutures.put(resource.getId().toString(), dataassetFuture);
-                dcatTransformerService.transformDataset(Json.encode(resource), dataassetFuture.completer());
-            }
-        }
-    }
-
-    private void initTransformations2(Connector connector,Future<String> connectorFuture, Future<String> catalogueFuture, Map<String, Future<String>> datassetFutures) {
+    private void initTransformations(Connector connector,Future<String> connectorFuture, Future<String> catalogueFuture, Map<String, Future<String>> datassetFutures) {
         String con = Json.encode(connector);
         dcatTransformerService.transformCatalogue(con, catalogueFuture.completer());
         dcatTransformerService.transformJsonForVirtuoso(con,connectorFuture.completer());

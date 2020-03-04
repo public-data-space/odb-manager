@@ -156,20 +156,34 @@ public class TSConnector {
         });
     }
 
-    public void putGraph(String graph , Model model,String dataset, Handler<AsyncResult<HttpResponse<Buffer>>> handler) {
+    public void deleteGraph(String graphName, Handler<AsyncResult<HttpResponse<Buffer>>> handler) {
+        HttpRequest<Buffer> request = client
+                .deleteAbs(uri + dataEndpoint)
+                .addQueryParam("graph", graphName);
+
+        Promise<HttpResponse<Buffer>> responsePromise = Promise.promise();
+
+        send(request, HttpMethod.DELETE, responsePromise);
+
+        responsePromise.future().setHandler(ar -> {
+            if (ar.succeeded()) {
+                LOGGER.info("Delete graph succeeded : "+graphName);
+                handler.handle(Future.succeededFuture());
+            } else {
+                LOGGER.info("Delete graph falied : "+graphName);
+                handler.handle(Future.failedFuture(ar.cause()));
+            }
+        });
+    }
+
+    public void putGraph(String graph , Model model,Handler<AsyncResult<HttpResponse<Buffer>>> handler) {
         HttpRequest<Buffer> request = client
                 .putAbs(uri + dataEndpoint)
                 .putHeader("Content-Type", "application/n-triples")
                 .addQueryParam("graph", graph);
         StringWriter writer = new StringWriter();
-        String output;
-        if (dataset==null){
-            RDFDataMgr.write(writer, model, Lang.NTRIPLES);
-            output = writer.toString();
-        }
-        else {
-            output = dataset;
-        }
+        RDFDataMgr.write(writer, model, Lang.NTRIPLES);
+        String output = writer.toString();
 
         if (breaker != null) {
             breaker.<HttpResponse<Buffer>>execute(promise -> sendBuffer(request, HttpMethod.PUT, Buffer.buffer(output), promise))
