@@ -1,22 +1,27 @@
 version: "3.5"
 services:
-#  broker:
- #   image: broker
-  #  build:
-  #    context: .
-  #    dockerfile: Dockerfile
-  #  environment:
-  #    - PIVEAU_HUB_HOST=piveau-hub
-  #    - PIVEAU_HUB_PORT=8080
-  #    - PIVEAU_HUB_APIKEY=yourapikey
-  #    - REPOSITORY=/ids/repo/
-  #    - HOST=postgres
-  #    - PORT=5432
-  #    - USER=ids
-  #    - DATABASE=ids
-  #    - PASSWORD=ids
-  #  ports:
-  #    - 8092:8080
+  #broker:
+   # image: broker
+    #build:
+     # context: .
+      #dockerfile: Dockerfile
+    #environment:
+     # - PIVEAU_HUB_HOST=piveau-hub
+      #- PIVEAU_HUB_PORT=8080
+      #- PIVEAU_HUB_APIKEY=yourapikey
+      #- REPOSITORY=/ids/repo/
+      #- HOST=postgres
+      #- PORT=5432
+      #- USER=ids
+      #- DATABASE=ids
+      #- PASSWORD=ids
+      #- VIRTUOSO_ADDRESS=http://localhost:8890
+      #- VIRTUOSO_DATAENDPOINT = /sparql-graph-crud-auth
+      #- VIRTUOSO_QUERYENDPOINT = /sparql-auth
+      #- VIRTUOSO_USER=dba
+      #- VIRTUOSO_PASSWORD=dba
+    #ports:
+     # - 8092:8080
 
   piveau-hub:
     image: dockerhub.fokus.fraunhofer.de:5000/viaduct/piveau-hub:prerelease

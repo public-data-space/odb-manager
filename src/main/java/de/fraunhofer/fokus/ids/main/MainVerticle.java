@@ -8,6 +8,9 @@ import de.fraunhofer.fokus.ids.utils.InitService;
 import de.fraunhofer.fokus.ids.utils.TSConnector;
 import io.vertx.circuitbreaker.CircuitBreaker;
 import io.vertx.circuitbreaker.CircuitBreakerOptions;
+import io.vertx.config.ConfigRetriever;
+import io.vertx.config.ConfigRetrieverOptions;
+import io.vertx.config.ConfigStoreOptions;
 import io.vertx.core.*;
 import io.vertx.core.http.HttpMethod;
 import io.vertx.core.http.HttpServer;
@@ -33,43 +36,61 @@ public class MainVerticle extends AbstractVerticle {
         this.router = Router.router(vertx);
         DeploymentOptions deploymentOptions = new DeploymentOptions();
         deploymentOptions.setWorker(true);
-        WebClient webClient = WebClient.create(vertx);
-        CircuitBreaker breaker = CircuitBreaker.create("virtuoso-breaker", vertx, new CircuitBreakerOptions().setMaxRetries(5))
-                .retryPolicy(count -> count * 1000L);
-        TSConnector connector = TSConnector.create(webClient, breaker);
-        this.brokerMessageController = new BrokerMessageController(connector,vertx);
+
+        ConfigStoreOptions confStore = new ConfigStoreOptions()
+                .setType("env");
+
+        ConfigRetrieverOptions options = new ConfigRetrieverOptions().addStore(confStore);
+
+        ConfigRetriever retriever = ConfigRetriever.create(vertx, options);
 
 
         Future<String> deployment = Future.succeededFuture();
-        deployment.compose(id1 -> {
-            Future<String> dcatTransformer = Future.future();
-            vertx.deployVerticle(DCATTransformerServiceVerticle.class.getName(), deploymentOptions, dcatTransformer.completer());
-            return dcatTransformer;
-        }).compose(id2 -> {
-            Future<String> brokerMessage = Future.future();
-            vertx.deployVerticle(BrokerMessageServiceVerticle.class.getName(), deploymentOptions, brokerMessage.completer());
-            return brokerMessage;
-        }).compose(id3 -> {
-            Future<String> databaseMessage = Future.future();
-            vertx.deployVerticle(DatabaseServiceVerticle.class.getName(), deploymentOptions, databaseMessage.completer());
-            return databaseMessage;
-        }).setHandler(ar -> {
-            if (ar.succeeded()) {
 
-                Future<Void> initFuture = Future.future();
-                new InitService(vertx).initDatabase(initFuture.completer());
+        retriever.getConfig(config -> {
+            if (config.succeeded()){
+                WebClient webClient = WebClient.create(vertx);
+                CircuitBreaker breaker = CircuitBreaker.create("virtuoso-breaker", vertx, new CircuitBreakerOptions().setMaxRetries(5))
+                        .retryPolicy(count -> count * 1000L);
+                TSConnector connector = TSConnector.create(webClient, breaker,config.result());
+                this.brokerMessageController = new BrokerMessageController(connector,vertx);
+                deployment.compose(id1 -> {
+                    Future<String> dcatTransformer = Future.future();
+                    vertx.deployVerticle(DCATTransformerServiceVerticle.class.getName(), deploymentOptions, dcatTransformer.completer());
+                    return dcatTransformer;
+                }).compose(id2 -> {
+                    Future<String> brokerMessage = Future.future();
+                    vertx.deployVerticle(BrokerMessageServiceVerticle.class.getName(), deploymentOptions, brokerMessage.completer());
+                    return brokerMessage;
+                }).compose(id3 -> {
+                    Future<String> databaseMessage = Future.future();
+                    vertx.deployVerticle(DatabaseServiceVerticle.class.getName(), deploymentOptions, databaseMessage.completer());
+                    return databaseMessage;
+                }).setHandler(ar -> {
+                    if (ar.succeeded()) {
 
-                if (initFuture.succeeded()) {
-                    router = Router.router(vertx);
-                    createHttpServer(vertx);
-                    startFuture.complete();
-                } else {
-                    startFuture.fail(initFuture.cause());
-                }
-            } else {
-                startFuture.fail(ar.cause());
+                        Future<Void> initFuture = Future.future();
+                        new InitService(vertx).initDatabase(initFuture.completer());
+
+                        if (initFuture.succeeded()) {
+                            router = Router.router(vertx);
+                            createHttpServer(vertx);
+                            startFuture.complete();
+                        } else {
+                            startFuture.fail(initFuture.cause());
+                        }
+                    } else {
+                        startFuture.fail(ar.cause());
+                    }
+                });
             }
+            else{
+                LOGGER.error(config.cause());
+                startFuture.fail(config.cause());
+            }
+
         });
+
     }
 
     private void createHttpServer(Vertx vertx) {

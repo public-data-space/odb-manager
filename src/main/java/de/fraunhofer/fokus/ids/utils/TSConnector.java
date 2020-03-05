@@ -8,6 +8,7 @@ import io.vertx.core.buffer.Buffer;
 import io.vertx.core.eventbus.ReplyException;
 import io.vertx.core.eventbus.ReplyFailure;
 import io.vertx.core.http.HttpMethod;
+import io.vertx.core.json.Json;
 import io.vertx.core.json.JsonObject;
 import io.vertx.core.logging.Logger;
 import io.vertx.core.logging.LoggerFactory;
@@ -46,19 +47,18 @@ public class TSConnector {
 
     private CircuitBreaker breaker;
 
-    public static TSConnector create(WebClient client, CircuitBreaker breaker) {
-        return new TSConnector(client, breaker);
+    public static TSConnector create(WebClient client, CircuitBreaker breaker,JsonObject config) {
+        return new TSConnector(client, breaker,config);
     }
 
-    private TSConnector(WebClient client, CircuitBreaker breaker) {
+    private TSConnector(WebClient client, CircuitBreaker breaker, JsonObject config) {
         this.client = client;
         this.breaker = breaker;
-        this.uri = "http://localhost:8890";
-        this.username = "dba" ;
-        this.password ="dba" ;
-        this.dataEndpoint ="/sparql-graph-crud-auth" ;
-        this.queryEndpoint ="/sparql" ;
-        this.updateEndpoint ="/sparql-auth" ;
+        this.uri = config.getString("VIRTUOSO_ADDRESS");
+        this.username = config.getString("VIRTUOSO_USER");
+        this.password = config.getString("VIRTUOSO_PASSWORD");
+        this.dataEndpoint = config.getString("VIRTUOSO_DATAENDPOINT", "/sparql-graph-crud-auth");
+        this.queryEndpoint = config.getString("VIRTUOSO_QUERYENDPOINT", "/sparql");
     }
 
     public static Lang mimeTypeToLang(String dataMimeType) {
