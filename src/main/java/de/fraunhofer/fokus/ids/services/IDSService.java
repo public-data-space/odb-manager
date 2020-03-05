@@ -118,8 +118,15 @@ public class IDSService {
         if (next.succeeded()){
             connectorFuture.setHandler(r -> {
                 if (r.succeeded()){
-                    deleteConnectorGraph(new JsonObject(connectorFuture.result()).getString("@id"),deleteAsync->{});
-                    putGraphConnector(uri,connectorFuture,readyHandler);
+                    deleteConnectorGraph(new JsonObject(connectorFuture.result()).getString("@id"),deleteAsync->{
+                        if (deleteAsync.succeeded()){
+                            putGraphConnector(uri,connectorFuture,readyHandler);
+                        }
+                        else {
+                            readyHandler.handle(Future.failedFuture(deleteAsync.cause()));
+                        }
+                    });
+
                 }
                 else {
                     LOGGER.info("connector future failed");
