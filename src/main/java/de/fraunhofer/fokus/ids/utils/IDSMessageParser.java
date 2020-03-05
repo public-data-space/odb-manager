@@ -36,4 +36,16 @@ public class IDSMessageParser {
             return null;
         }
     }
+
+    public static String getQuery(String input) {
+        try {
+            int beginBody = input.indexOf(SEPARATOR, (SEPARATOR).length() + 1);
+            String bodyPart = input.substring(beginBody);
+            String query = bodyPart.substring(bodyPart.indexOf("bit")+3, bodyPart.lastIndexOf(SEPARATOR)-1);
+            return query;
+        } catch (Exception e) {
+            LOGGER.error(e);
+            return null;
+        }
+    }
 }

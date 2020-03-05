@@ -309,4 +309,38 @@ public class TSConnector {
         return auth(uri,methodName,username,password);
     }
 
+    public void query(String query, String accept, Handler<AsyncResult<HttpResponse<Buffer>>> handler) {
+        HttpRequest<Buffer> request = client
+                .getAbs(uri + queryEndpoint)
+                .addQueryParam("query", query);
+        if (accept != null) {
+            request.putHeader("Accept", accept);
+        }
+        query(request, handler);
+    }
+
+
+
+    public void query(HttpRequest<Buffer> request, Handler<AsyncResult<HttpResponse<Buffer>>> handler) {
+        if (breaker != null) {
+            breaker.<HttpResponse<Buffer>>execute(promise -> send(request, HttpMethod.GET, promise))
+                    .setHandler(ar -> {
+                        if (ar.succeeded()) {
+                            handler.handle(Future.succeededFuture(ar.result()));
+                        } else {
+                            handler.handle(Future.failedFuture(ar.cause()));
+                        }
+                    });
+        } else {
+            Promise<HttpResponse<Buffer>> promise = Promise.promise();
+            send(request, HttpMethod.GET, promise);
+            promise.future().setHandler(ar -> {
+                if (ar.succeeded()) {
+                    handler.handle(Future.succeededFuture(ar.result()));
+                } else {
+                    handler.handle(Future.failedFuture(ar.cause()));
+                }
+            });
+        }
+    }
 }

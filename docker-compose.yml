@@ -115,6 +115,14 @@ services:
       options:
         max-size: "50m"
     ports:
+      - 8891:8890
+
+  virtuoso_broker:
+    image: dockerhub.fokus.fraunhofer.de:5000/viaduct/piveau-virtuoso
+    logging:
+      options:
+        max-size: "50m"
+    ports:
       - 8890:8890
       - 1111:1111
 

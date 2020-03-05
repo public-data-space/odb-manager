@@ -43,15 +43,17 @@ public class BrokerMessageController {
             }
         } else {
             URI uri = header.getId();
-            Connector connector = IDSMessageParser.getBody(input);
             try {
                 if (header instanceof ConnectorAvailableMessage) {
+                    Connector connector = IDSMessageParser.getBody(input);
                     LOGGER.info("AvailableMessage received.");
                     idsService.register(uri, connector, readyHandler);
                 } else if (header instanceof ConnectorUnavailableMessage) {
+                    Connector connector = IDSMessageParser.getBody(input);
                     LOGGER.info("UnavailableMessage received.");
                     idsService.unregister(uri, connector, readyHandler);
                 } else if (header instanceof ConnectorUpdateMessage) {
+                    Connector connector = IDSMessageParser.getBody(input);
                     LOGGER.info("UpdateMessage received.");
                     idsService.update(uri, connector, readyHandler);
                 } else if (header instanceof SelfDescriptionRequest) {
@@ -59,7 +61,8 @@ public class BrokerMessageController {
                     idsService.selfDescriptionRequest(uri, readyHandler);
                 }else if (header instanceof QueryMessage) {
                     LOGGER.info("QueryMessage received.");
-                    idsService.queryMessage(uri, readyHandler);
+                    String body = IDSMessageParser.getQuery(input);
+                    idsService.queryMessage(body,uri, readyHandler);
                 }else {
                     LOGGER.error(RejectionReason.MESSAGE_TYPE_NOT_SUPPORTED);
                     idsService.handleRejectionMessage(RejectionReason.MESSAGE_TYPE_NOT_SUPPORTED, uri, readyHandler);

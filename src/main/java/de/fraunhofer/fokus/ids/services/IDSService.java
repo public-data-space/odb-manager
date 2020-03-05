@@ -22,6 +22,8 @@ import org.apache.http.entity.ContentType;
 import org.apache.http.entity.mime.MultipartEntityBuilder;
 import org.apache.http.entity.mime.content.ContentBody;
 import org.apache.http.entity.mime.content.StringBody;
+import org.apache.jena.query.ResultSet;
+import org.apache.jena.query.ResultSetFactory;
 import org.apache.jena.rdf.model.Model;
 import org.apache.jena.rdf.model.ModelFactory;
 import org.apache.jena.riot.Lang;
@@ -29,8 +31,10 @@ import org.apache.jena.riot.Lang;
 import javax.xml.datatype.DatatypeConfigurationException;
 import javax.xml.datatype.DatatypeFactory;
 import javax.xml.datatype.XMLGregorianCalendar;
+import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.nio.charset.StandardCharsets;
@@ -72,8 +76,34 @@ public class IDSService {
         handleBrokerSelfDescription(uri,resultHandler, selfDescriptionResponse, brokerFuture);
     }
 
-    public void queryMessage(URI uri, Handler<AsyncResult<String>> resultHandler) {
-       LOGGER.info("Yeah");
+    public void queryMessage(String query ,URI uri, Handler<AsyncResult<String>> resultHandler) {
+        tsConnector.query(query,"application/json",httpResponseAsyncResult -> {
+            if (httpResponseAsyncResult.succeeded()) {
+                ResultMessage resultMessage = new ResultMessageBuilder()
+                        ._correlationMessage_(uri)
+                        ._modelVersion_(INFO_MODEL_VERSION).build();
+                ContentBody contentBody = new StringBody(Json.encodePrettily(resultMessage), ContentType.create("application/json"));
+                ContentBody payload = new StringBody(Json.encodePrettily(httpResponseAsyncResult.result().bodyAsJsonObject()), ContentType.create("application/json"));
+                MultipartEntityBuilder multipartEntityBuilder = MultipartEntityBuilder.create()
+                        .setBoundary("IDSMSGPART")
+                        .setCharset(StandardCharsets.UTF_8)
+                        .setContentType(ContentType.APPLICATION_JSON)
+                        .addPart("header", contentBody)
+                        .addPart("payload", payload);
+
+                ByteArrayOutputStream out = new ByteArrayOutputStream();
+                try {
+                    multipartEntityBuilder.build().writeTo(out);
+                } catch (IOException e) {
+                    LOGGER.error(e);
+                    handleRejectionMessage(RejectionReason.INTERNAL_RECIPIENT_ERROR,uri,resultHandler);
+                }
+                resultHandler.handle(Future.succeededFuture(out.toString()));
+            }
+            else{
+
+            }
+        });
     }
 
     private void handleBrokerSelfDescription(URI uri,Handler<AsyncResult<String>> resultHandler, SelfDescriptionResponse selfDescriptionResponse, Future<Broker> brokerFuture) {
@@ -755,5 +785,6 @@ public class IDSService {
             }
         });
     }
+
 
 }
