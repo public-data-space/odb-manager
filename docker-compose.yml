@@ -15,7 +15,7 @@ services:
       #- USER=ids
       #- DATABASE=ids
       #- PASSWORD=ids
-      #- VIRTUOSO_ADDRESS=http://localhost:8890
+      #- VIRTUOSO_ADDRESS=http://localhost:8891
       #- VIRTUOSO_DATAENDPOINT = /sparql-graph-crud-auth
       #- VIRTUOSO_QUERYENDPOINT = /sparql-auth
       #- VIRTUOSO_USER=dba
@@ -115,7 +115,7 @@ services:
       options:
         max-size: "50m"
     ports:
-      - 8891:8890
+      - 8890:8890
 
   virtuoso_broker:
     image: dockerhub.fokus.fraunhofer.de:5000/viaduct/piveau-virtuoso
@@ -123,7 +123,7 @@ services:
       options:
         max-size: "50m"
     ports:
-      - 8890:8890
+      - 8891:8890
       - 1111:1111
 
   postgres:

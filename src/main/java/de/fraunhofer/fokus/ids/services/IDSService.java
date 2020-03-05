@@ -84,26 +84,32 @@ public class IDSService {
                         ._modelVersion_(INFO_MODEL_VERSION).build();
                 ContentBody contentBody = new StringBody(Json.encodePrettily(resultMessage), ContentType.create("application/json"));
                 ContentBody payload = new StringBody(Json.encodePrettily(httpResponseAsyncResult.result().bodyAsJsonObject()), ContentType.create("application/json"));
-                MultipartEntityBuilder multipartEntityBuilder = MultipartEntityBuilder.create()
-                        .setBoundary("IDSMSGPART")
-                        .setCharset(StandardCharsets.UTF_8)
-                        .setContentType(ContentType.APPLICATION_JSON)
-                        .addPart("header", contentBody)
-                        .addPart("payload", payload);
-
-                ByteArrayOutputStream out = new ByteArrayOutputStream();
-                try {
-                    multipartEntityBuilder.build().writeTo(out);
-                } catch (IOException e) {
-                    LOGGER.error(e);
-                    handleRejectionMessage(RejectionReason.INTERNAL_RECIPIENT_ERROR,uri,resultHandler);
+                LOGGER.info("Query Message succeeded");
+                multiPartBuilderForMessage(uri, contentBody, payload,resultHandler);
                 }
-                resultHandler.handle(Future.succeededFuture(out.toString()));
-            }
             else{
-
+                LOGGER.error("Query Message failed "+httpResponseAsyncResult.cause());
+                handleRejectionMessage(RejectionReason.INTERNAL_RECIPIENT_ERROR,uri,resultHandler);
             }
         });
+    }
+
+    private void multiPartBuilderForMessage(URI uri, ContentBody contentBody, ContentBody payload, Handler<AsyncResult<String>> resultHandler) {
+        MultipartEntityBuilder multipartEntityBuilder = MultipartEntityBuilder.create()
+                .setBoundary("IDSMSGPART")
+                .setCharset(StandardCharsets.UTF_8)
+                .setContentType(ContentType.APPLICATION_JSON)
+                .addPart("header", contentBody)
+                .addPart("payload", payload);
+
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        try {
+            multipartEntityBuilder.build().writeTo(out);
+            resultHandler.handle(Future.succeededFuture(out.toString()));
+        } catch (IOException e) {
+            LOGGER.error(e);
+            handleRejectionMessage(RejectionReason.INTERNAL_RECIPIENT_ERROR,uri,resultHandler);
+        }
     }
 
     private void handleBrokerSelfDescription(URI uri,Handler<AsyncResult<String>> resultHandler, SelfDescriptionResponse selfDescriptionResponse, Future<Broker> brokerFuture) {
@@ -111,21 +117,7 @@ public class IDSService {
             if (contentBodyAsyncResult.succeeded()) {
                 ContentBody contentBody = new StringBody(Json.encodePrettily(selfDescriptionResponse), ContentType.create("application/json"));
                 ContentBody payload = contentBodyAsyncResult.result();
-                MultipartEntityBuilder multipartEntityBuilder = MultipartEntityBuilder.create()
-                        .setBoundary("IDSMSGPART")
-                        .setCharset(StandardCharsets.UTF_8)
-                        .setContentType(ContentType.APPLICATION_JSON)
-                        .addPart("header", contentBody)
-                        .addPart("payload", payload);
-
-                ByteArrayOutputStream out = new ByteArrayOutputStream();
-                try {
-                    multipartEntityBuilder.build().writeTo(out);
-                } catch (IOException e) {
-                    LOGGER.error(e);
-                    handleRejectionMessage(RejectionReason.INTERNAL_RECIPIENT_ERROR,uri,resultHandler);
-                }
-                resultHandler.handle(Future.succeededFuture(out.toString()));
+                multiPartBuilderForMessage(uri, contentBody, payload,resultHandler);
             } else {
                 handleRejectionMessage(RejectionReason.INTERNAL_RECIPIENT_ERROR,uri,resultHandler);
             }
