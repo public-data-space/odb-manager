@@ -176,6 +176,7 @@ public class IDSService {
     }
 
     public void update(URI uri, Connector connector, Handler<AsyncResult<String>> readyHandler) {
+
         resolveCatalogueId(connector.getId().toString(), next -> {
             if (next.succeeded()) {
                 Future<String> catalogueFuture = Future.future();
@@ -250,17 +251,25 @@ public class IDSService {
 
         Map<String, Future<String>> datassetFutures = new HashMap<>();
         initTransformations(connector,connectorFuture, catalogueFuture, datassetFutures);
-        putGraphConnector(uri,connectorFuture,connectorFutureAsync->{
-            if (connectorFutureAsync.succeeded()){
-                catalogueFuture.setHandler(catalogueTTLResult ->
-                        handleCatalogueExternal(catalogueTTLResult, catalogueId, piveauCatalogueReply ->
-                                handleCatalogueInternal(piveauCatalogueReply, connector.getId().toString(), internalCatalogueReply ->
-                                        handleDatasets(uri,connector,internalCatalogueReply, datassetFutures,readyHandler))));
+        resolveCatalogueId(connector.getId().toString(),next->{
+            if (next.succeeded()) {
+                update(uri,connector,readyHandler);
             }
             else {
-                handleRejectionMessage(RejectionReason.INTERNAL_RECIPIENT_ERROR, uri, readyHandler);
+                putGraphConnector(uri,connectorFuture,connectorFutureAsync->{
+                    if (connectorFutureAsync.succeeded()){
+                        catalogueFuture.setHandler(catalogueTTLResult ->
+                                handleCatalogueExternal(catalogueTTLResult, catalogueId, piveauCatalogueReply ->
+                                        handleCatalogueInternal(piveauCatalogueReply, connector.getId().toString(), internalCatalogueReply ->
+                                                handleDatasets(uri,connector,internalCatalogueReply, datassetFutures,readyHandler))));
+                    }
+                    else {
+                        handleRejectionMessage(RejectionReason.INTERNAL_RECIPIENT_ERROR, uri, readyHandler);
+                    }
+                });
             }
-       });
+        });
+
     }
 
     public void unregister(URI uri, Connector connector, Handler<AsyncResult<String>> readyHandler) {
