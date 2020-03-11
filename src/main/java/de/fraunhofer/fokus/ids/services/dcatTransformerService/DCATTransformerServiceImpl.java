@@ -20,7 +20,10 @@ import org.apache.jena.vocabulary.*;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.net.URI;
+import java.text.ParseException;
+import java.text.SimpleDateFormat;
 import java.util.ArrayList;
+import java.util.Date;
 import java.util.UUID;
 
 public class DCATTransformerServiceImpl implements DCATTransformerService {
@@ -34,7 +37,7 @@ public class DCATTransformerServiceImpl implements DCATTransformerService {
     }
 
     @Override
-    public DCATTransformerService transformCatalogue(String connectorJson, Handler<AsyncResult<String>> readyHandler) {
+    public DCATTransformerService transformCatalogue(String connectorJson,String issued, Handler<AsyncResult<String>> readyHandler) {
         Connector connector = Json.decodeValue(connectorJson, Connector.class);
 
         Model model = setPrefixes(ModelFactory.createDefaultModel());
@@ -52,7 +55,7 @@ public class DCATTransformerServiceImpl implements DCATTransformerService {
 
         addPLainLiterals(catalogue, connector.getTitle(), DCTerms.title, model);
         addPLainLiterals(catalogue, connector.getDescription(), DCTerms.description, model);
-
+        addDateLiterals(catalogue,issued,model);
         try(ByteArrayOutputStream baos = new ByteArrayOutputStream()){
             model.write(baos, "TTL");
             readyHandler.handle(Future.succeededFuture(baos.toString()));
@@ -65,9 +68,8 @@ public class DCATTransformerServiceImpl implements DCATTransformerService {
     }
 
     @Override
-    public DCATTransformerService transformDataset(String datasetJson, Handler<AsyncResult<String>> readyHandler) {
+    public DCATTransformerService transformDataset(String datasetJson,String issued, Handler<AsyncResult<String>> readyHandler) {
         Resource dataasset = Json.decodeValue(datasetJson, Resource.class);
-
         Model model = setPrefixes(ModelFactory.createDefaultModel());
 
         org.apache.jena.rdf.model.Resource dataset = model.createResource(dataasset.getId().toString())
@@ -80,7 +82,7 @@ public class DCATTransformerServiceImpl implements DCATTransformerService {
         checkNull(dataasset.getStandardLicense(),DCTerms.license,dataset);
         checkNull(dataasset.getVersion(),DCTerms.hasVersion,dataset);
         addPLainLiterals(dataset, dataasset.getKeyword(),DCAT.keyword, model);
-
+        addDateLiterals(dataset,issued,model);
         if (dataasset.getTheme()!=null){
             for (URI uri:dataasset.getTheme()){
                 checkNull(uri,DCAT.theme,dataset);
@@ -140,6 +142,22 @@ public class DCATTransformerServiceImpl implements DCATTransformerService {
             }
         });
         return this;
+    }
+
+    private void addDateLiterals(org.apache.jena.rdf.model.Resource resource,String issued, Model model){
+        Date date = new Date();
+        SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd'T'hh:mm:ss");
+        resource.addLiteral(DCTerms.modified,model.createTypedLiteral(sdf.format(date),"xsd:dateTime"));
+        if (issued!=null) {
+            try {
+                date = sdf.parse(issued);
+            } catch (ParseException e) {
+                e.printStackTrace();
+            }
+            resource.addLiteral(DCTerms.issued,model.createTypedLiteral(sdf.format(date),"xsd:dateTime"));
+        }else {
+            resource.addLiteral(DCTerms.issued,model.createTypedLiteral(sdf.format(date),"xsd:dateTime"));
+        }
     }
 
     private void addPLainLiterals(org.apache.jena.rdf.model.Resource resource, ArrayList<? extends PlainLiteral> list, Property relation, Model model){

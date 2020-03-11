@@ -86,7 +86,7 @@ public class IDSService {
                 ContentBody payload = new StringBody(Json.encodePrettily(httpResponseAsyncResult.result().bodyAsJsonObject()), ContentType.create("application/json"));
                 LOGGER.info("Query Message succeeded");
                 multiPartBuilderForMessage(uri, contentBody, payload,resultHandler);
-                }
+            }
             else{
                 LOGGER.error("Query Message failed "+httpResponseAsyncResult.cause());
                 handleRejectionMessage(RejectionReason.INTERNAL_RECIPIENT_ERROR,uri,resultHandler);
@@ -163,16 +163,16 @@ public class IDSService {
     }
 
     private void deleteConnectorGraph(String connectorId , Handler<AsyncResult<String>> readyHandler){
-                    tsConnector.deleteGraph(connectorId,httpResponseAsyncResult -> {
-                        if (httpResponseAsyncResult.succeeded()){
-                            LOGGER.info("delete Connector's Graph succeeded");
-                            readyHandler.handle(Future.succeededFuture("delete Connector's Graph succeeded"));
-                        }
-                        else{
-                            LOGGER.info("delete Connector's Graph failed");
-                            readyHandler.handle(Future.failedFuture(httpResponseAsyncResult.cause()));
-                        }
-                    });
+        tsConnector.deleteGraph(connectorId,httpResponseAsyncResult -> {
+            if (httpResponseAsyncResult.succeeded()){
+                LOGGER.info("delete Connector's Graph succeeded");
+                readyHandler.handle(Future.succeededFuture("delete Connector's Graph succeeded"));
+            }
+            else{
+                LOGGER.info("delete Connector's Graph failed");
+                readyHandler.handle(Future.failedFuture(httpResponseAsyncResult.cause()));
+            }
+        });
     }
 
     public void update(URI uri, Connector connector, Handler<AsyncResult<String>> readyHandler) {
@@ -198,7 +198,7 @@ public class IDSService {
     }
 
     public void getGraph(Handler<AsyncResult<String>> resultHandler){
-            tsConnector.getGraph("http://fokus.fraunhofer.de/odc#DataResource1",resultHandler);
+        tsConnector.getGraph("http://fokus.fraunhofer.de/odc#DataResource1",resultHandler);
     }
 
     private void handlePutGraph(URI uri,String graph,Model model,Handler<AsyncResult<String>> readyHandler){
@@ -230,18 +230,18 @@ public class IDSService {
     }
 
     private void putDatasetsGraph(URI uri,Connector connector, Handler<AsyncResult<String>> readyHandler){
-            for (Resource resource:connector.getCatalog().getOffer()){
-                String dataset = Json.encode(resource);
-                dcatTransformerService.transformJsonForVirtuoso(dataset,stringAsyncResult -> {
-                    Model model = ModelFactory.createDefaultModel();
-                    try {
-                        model.read(IOUtils.toInputStream(stringAsyncResult.result(), "UTF-8"), null, "JSON-LD");
-                        handlePutGraph(uri,resource.getId().toString(),model,readyHandler);
-                    } catch (IOException e) {
-                        e.printStackTrace();
-                    }
-                });
-            }
+        for (Resource resource:connector.getCatalog().getOffer()){
+            String dataset = Json.encode(resource);
+            dcatTransformerService.transformJsonForVirtuoso(dataset,stringAsyncResult -> {
+                Model model = ModelFactory.createDefaultModel();
+                try {
+                    model.read(IOUtils.toInputStream(stringAsyncResult.result(), "UTF-8"), null, "JSON-LD");
+                    handlePutGraph(uri,resource.getId().toString(),model,readyHandler);
+                } catch (IOException e) {
+                    e.printStackTrace();
+                }
+            });
+        }
     }
 
     public void register(URI uri, Connector connector, Handler<AsyncResult<String>> readyHandler) {
@@ -625,13 +625,15 @@ public class IDSService {
 
     private void initTransformations(Connector connector,Future<String> connectorFuture, Future<String> catalogueFuture, Map<String, Future<String>> datassetFutures) {
         String con = Json.encode(connector);
-        dcatTransformerService.transformCatalogue(con, catalogueFuture.completer());
+        dcatTransformerService.transformCatalogue(con,null, catalogueFuture.completer());
         dcatTransformerService.transformJsonForVirtuoso(con,connectorFuture.completer());
         if (connector.getCatalog() != null) {
             for (Resource resource : connector.getCatalog().getOffer()) {
+                StaticEndpoint staticEndpoint = (StaticEndpoint) resource.getResourceEndpoint().get(0);
+                String date = staticEndpoint.getEndpointArtifact().getCreationDate().toString();
                 Future<String> dataassetFuture = Future.future();
                 datassetFutures.put(resource.getId().toString(), dataassetFuture);
-                dcatTransformerService.transformDataset(Json.encode(resource), dataassetFuture.completer());
+                dcatTransformerService.transformDataset(Json.encode(resource),date, dataassetFuture.completer());
             }
         }
     }

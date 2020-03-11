@@ -14,10 +14,10 @@ import io.vertx.core.Vertx;
 public interface DCATTransformerService {
 
     @Fluent
-    DCATTransformerService transformCatalogue(String connectorJson, Handler<AsyncResult<String>> readyHandler);
+    DCATTransformerService transformCatalogue(String connectorJson,String issued, Handler<AsyncResult<String>> readyHandler);
 
     @Fluent
-    DCATTransformerService transformDataset(String datasetJson, Handler<AsyncResult<String>> readyHandler);
+    DCATTransformerService transformDataset(String datasetJson,String issued, Handler<AsyncResult<String>> readyHandler);
 
     @Fluent
     DCATTransformerService transformJsonForVirtuoso(String connectorJson, Handler<AsyncResult<String>> readyHandler);
