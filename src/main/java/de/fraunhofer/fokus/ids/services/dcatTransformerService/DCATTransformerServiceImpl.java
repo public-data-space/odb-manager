@@ -148,16 +148,12 @@ public class DCATTransformerServiceImpl implements DCATTransformerService {
         Date date = new Date();
         SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd'T'hh:mm:ss");
         resource.addLiteral(DCTerms.modified,model.createTypedLiteral(sdf.format(date),"xsd:dateTime"));
-        if (issued!=null) {
             try {
                 date = sdf.parse(issued);
             } catch (ParseException e) {
                 e.printStackTrace();
             }
             resource.addLiteral(DCTerms.issued,model.createTypedLiteral(sdf.format(date),"xsd:dateTime"));
-        }else {
-            resource.addLiteral(DCTerms.issued,model.createTypedLiteral(sdf.format(date),"xsd:dateTime"));
-        }
     }
 
     private void addPLainLiterals(org.apache.jena.rdf.model.Resource resource, ArrayList<? extends PlainLiteral> list, Property relation, Model model){
