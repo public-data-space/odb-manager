@@ -24,6 +24,7 @@ import java.text.ParseException;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Date;
+import java.util.Map;
 import java.util.UUID;
 
 public class DCATTransformerServiceImpl implements DCATTransformerService {
@@ -68,7 +69,7 @@ public class DCATTransformerServiceImpl implements DCATTransformerService {
     }
 
     @Override
-    public DCATTransformerService transformDataset(String datasetJson,String issued, Handler<AsyncResult<String>> readyHandler) {
+    public DCATTransformerService transformDataset(String datasetJson, String issued, Handler<AsyncResult<String>> readyHandler) {
         Resource dataasset = Json.decodeValue(datasetJson, Resource.class);
         Model model = setPrefixes(ModelFactory.createDefaultModel());
 
@@ -187,4 +188,5 @@ public class DCATTransformerServiceImpl implements DCATTransformerService {
             resource.addProperty(property, String.valueOf(object));
         }
     }
+
 }

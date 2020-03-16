@@ -1,648 +1,43 @@
 package de.fraunhofer.fokus.ids.services;
 
-import de.fraunhofer.fokus.ids.services.brokerMessageService.BrokerMessageService;
-import de.fraunhofer.fokus.ids.services.databaseService.DatabaseService;
-import de.fraunhofer.fokus.ids.services.dcatTransformerService.DCATTransformerService;
-import de.fraunhofer.fokus.ids.utils.IDSMessageParser;
-import de.fraunhofer.fokus.ids.utils.TSConnector;
+import de.fraunhofer.fokus.ids.manager.CatalogueManager;
 import de.fraunhofer.iais.eis.*;
 import io.vertx.core.*;
 import io.vertx.core.buffer.Buffer;
-import io.vertx.core.http.HttpMethod;
 import io.vertx.core.json.Json;
-import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 import io.vertx.core.logging.Logger;
 import io.vertx.core.logging.LoggerFactory;
-import io.vertx.ext.web.client.HttpRequest;
-import io.vertx.ext.web.client.HttpResponse;
-import io.vertx.ext.web.client.WebClient;
-import org.apache.commons.io.IOUtils;
 import org.apache.http.entity.ContentType;
 import org.apache.http.entity.mime.MultipartEntityBuilder;
 import org.apache.http.entity.mime.content.ContentBody;
 import org.apache.http.entity.mime.content.StringBody;
-import org.apache.jena.query.ResultSet;
-import org.apache.jena.query.ResultSetFactory;
-import org.apache.jena.rdf.model.Model;
-import org.apache.jena.rdf.model.ModelFactory;
-import org.apache.jena.riot.Lang;
 
 import javax.xml.datatype.DatatypeConfigurationException;
 import javax.xml.datatype.DatatypeFactory;
 import javax.xml.datatype.XMLGregorianCalendar;
-import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
-import java.io.InputStream;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
-import java.util.Collection;
-import java.util.List;
-import java.util.Map;
 
 public class IDSService {
     private final Logger LOGGER = LoggerFactory.getLogger(IDSService.class.getName());
-    private DatabaseService databaseService;
-    private BrokerMessageService brokerMessageService;
-    private DCATTransformerService dcatTransformerService;
-    private TSConnector tsConnector;
-
-    private final static String INSERT_CAT_STATEMENT = "INSERT INTO catalogues (created_at, updated_at, external_id, internal_id) values (NOW(),NOW(),?,?)";
-    private final static String INSERT_DS_STATEMENT = "INSERT INTO datasets (created_at, updated_at, external_id, internal_id) values (NOW(),NOW(),?,?)";
-    private final static String SELECT_CAT_STATEMENT = "SELECT * FROM catalogues WHERE external_id=?";
-    private final static String SELECT_DS_STATEMENT = "SELECT * FROM datasets WHERE external_id=?";
-    private final static String RESOLVE_DS_STATEMENT = "SELECT * FROM datasets WHERE internal_id=?";
-    private static final String DELETE_DS_UPDATE = "DELETE FROM datasets WHERE internal_id = ?";
-    private final static String DELETE_CAT_STATEMENT = "DELETE FROM catalogues WHERE internal_id = ?";
-
+    private CatalogueManager catalogueManager;
     private String INFO_MODEL_VERSION = "2.0.0";
     private String[] SUPPORTED_INFO_MODEL_VERSIONS = {"2.0.0"};
 
-    public IDSService(TSConnector connector,Vertx vertx) {
-        this.tsConnector = connector;
-        this.databaseService = DatabaseService.createProxy(vertx, "databaseService");
-        this.brokerMessageService = BrokerMessageService.createProxy(vertx, "brokerMessageService");
-        this.dcatTransformerService = DCATTransformerService.createProxy(vertx, "dcatTransformerService");
+    public IDSService(Vertx vertx) {
+        this.catalogueManager = new CatalogueManager(vertx);
     }
 
-    public void selfDescriptionRequest(URI uri, Handler<AsyncResult<String>> resultHandler) {
-        JsonObject jsonObject = new JsonObject();
-        SelfDescriptionResponse selfDescriptionResponse = buildSelfDescriptionResponse(jsonObject);
-        Future<Broker> brokerFuture = Future.future();
-        buildBroker(jsonObject, brokerFuture.completer());
-        handleBrokerSelfDescription(uri,resultHandler, selfDescriptionResponse, brokerFuture);
-    }
-
-    public void queryMessage(String query ,URI uri, Handler<AsyncResult<String>> resultHandler) {
-        tsConnector.query(query,"application/json",httpResponseAsyncResult -> {
-            if (httpResponseAsyncResult.succeeded()) {
-                ResultMessage resultMessage = new ResultMessageBuilder()
-                        ._correlationMessage_(uri)
-                        ._modelVersion_(INFO_MODEL_VERSION).build();
-                ContentBody contentBody = new StringBody(Json.encodePrettily(resultMessage), ContentType.create("application/json"));
-                ContentBody payload = new StringBody(Json.encodePrettily(httpResponseAsyncResult.result().bodyAsJsonObject()), ContentType.create("application/json"));
-                LOGGER.info("Query Message succeeded");
-                multiPartBuilderForMessage(uri, contentBody, payload,resultHandler);
-            }
-            else{
-                LOGGER.error("Query Message failed "+httpResponseAsyncResult.cause());
-                handleRejectionMessage(RejectionReason.INTERNAL_RECIPIENT_ERROR,uri,resultHandler);
-            }
-        });
-    }
-
-    private void multiPartBuilderForMessage(URI uri, ContentBody contentBody, ContentBody payload, Handler<AsyncResult<String>> resultHandler) {
-        MultipartEntityBuilder multipartEntityBuilder = MultipartEntityBuilder.create()
-                .setBoundary("IDSMSGPART")
-                .setCharset(StandardCharsets.UTF_8)
-                .setContentType(ContentType.APPLICATION_JSON)
-                .addPart("header", contentBody)
-                .addPart("payload", payload);
-
-        ByteArrayOutputStream out = new ByteArrayOutputStream();
-        try {
-            multipartEntityBuilder.build().writeTo(out);
-            resultHandler.handle(Future.succeededFuture(out.toString()));
-        } catch (IOException e) {
-            LOGGER.error(e);
-            handleRejectionMessage(RejectionReason.INTERNAL_RECIPIENT_ERROR,uri,resultHandler);
-        }
-    }
-
-    private void handleBrokerSelfDescription(URI uri,Handler<AsyncResult<String>> resultHandler, SelfDescriptionResponse selfDescriptionResponse, Future<Broker> brokerFuture) {
-        handleBrokerFuture(brokerFuture, contentBodyAsyncResult -> {
-            if (contentBodyAsyncResult.succeeded()) {
-                ContentBody contentBody = new StringBody(Json.encodePrettily(selfDescriptionResponse), ContentType.create("application/json"));
-                ContentBody payload = contentBodyAsyncResult.result();
-                multiPartBuilderForMessage(uri, contentBody, payload,resultHandler);
-            } else {
-                handleRejectionMessage(RejectionReason.INTERNAL_RECIPIENT_ERROR,uri,resultHandler);
-            }
-        });
-    }
-
-    public void handleBrokerFuture(Future<Broker> brokerFuture, Handler<AsyncResult<ContentBody>> resultHandler) {
-        brokerFuture.setHandler(brokerAsyncResult -> {
-            if (brokerAsyncResult.succeeded()) {
-                ContentBody payload = new StringBody(Json.encodePrettily(brokerAsyncResult.result()), ContentType.create("application/json"));
-                resultHandler.handle(Future.succeededFuture(payload));
-            } else {
-                resultHandler.handle(Future.failedFuture(brokerAsyncResult.cause()));
-            }
-        });
-
-    }
-
-    private void handleUpdateConnectorGraph (URI uri,AsyncResult<String> next,Future<String> connectorFuture,Handler<AsyncResult<String>> readyHandler){
-        if (next.succeeded()){
-            connectorFuture.setHandler(r -> {
-                if (r.succeeded()){
-                    deleteConnectorGraph(new JsonObject(connectorFuture.result()).getString("@id"),deleteAsync->{
-                        if (deleteAsync.succeeded()){
-                            putGraphConnector(uri,connectorFuture,readyHandler);
-                        }
-                        else {
-                            readyHandler.handle(Future.failedFuture(deleteAsync.cause()));
-                        }
-                    });
-
-                }
-                else {
-                    LOGGER.info("connector future failed");
-                    readyHandler.handle(Future.failedFuture(r.cause()));
-                }
-            });
-        }
-        else {
-            readyHandler.handle(Future.failedFuture(next.cause()));
-        }
-
-    }
-
-    private void deleteConnectorGraph(String connectorId , Handler<AsyncResult<String>> readyHandler){
-        tsConnector.deleteGraph(connectorId,httpResponseAsyncResult -> {
-            if (httpResponseAsyncResult.succeeded()){
-                LOGGER.info("delete Connector's Graph succeeded");
-                readyHandler.handle(Future.succeededFuture("delete Connector's Graph succeeded"));
-            }
-            else{
-                LOGGER.info("delete Connector's Graph failed");
-                readyHandler.handle(Future.failedFuture(httpResponseAsyncResult.cause()));
-            }
-        });
-    }
-
-    public void update(URI uri, Connector connector, Handler<AsyncResult<String>> readyHandler) {
-
-        resolveCatalogueId(connector.getId().toString(), next -> {
-            if (next.succeeded()) {
-                Future<String> catalogueFuture = Future.future();
-                Future<String> connectorFuture = Future.future();
-                Map<String, Future<String>> datassetFutures = new HashMap<>();
-                initTransformations(connector,connectorFuture, catalogueFuture, datassetFutures);
-                catalogueFuture.setHandler(reply -> {
-                    handleUpdateConnectorGraph(uri,reply,connectorFuture,next1->
-                            handleCatalogueExternal(reply, next.result(), next2 -> {
-                                updateDatasets(connector,uri, datassetFutures, next.result(), readyHandler);
-                            }) );
-
-                });
-            } else {
-                LOGGER.error(next.cause());
-                handleRejectionMessage(RejectionReason.INTERNAL_RECIPIENT_ERROR, uri, readyHandler);
-            }
-        });
-    }
-
-    public void getGraph(Handler<AsyncResult<String>> resultHandler){
-        tsConnector.getGraph("http://fokus.fraunhofer.de/odc#DataResource1",resultHandler);
-    }
-
-    private void handlePutGraph(URI uri,String graph,Model model,Handler<AsyncResult<String>> readyHandler){
-        tsConnector.putGraph(graph,model,r2->{
-            if (r2.succeeded()) {
-                LOGGER.info("send graph succeeded");
-                handleSucceededMessage(uri, readyHandler);
-            } else {
-                LOGGER.info("send graph failed "+r2.cause());
-                readyHandler.handle(Future.failedFuture(r2.cause()));
-            }
-
-        });
-    }
-
-    private void putGraphConnector(URI uri,Future<String> connectorFuture, Handler<AsyncResult<String>> readyHandler){
-        connectorFuture.setHandler(r->{
-            String con = r.result();
-            String graph = new JsonObject(con).getString("@id");
-            Model model = ModelFactory.createDefaultModel();
-            try{
-                model.read(IOUtils.toInputStream(con , "UTF-8"), null, "JSON-LD");
-                handlePutGraph(uri,graph,model,readyHandler);
-            } catch (Exception e) {
-                LOGGER.error(e);
-                readyHandler.handle(Future.failedFuture(e));
-            }
-        });
-    }
-
-    private void putDatasetsGraph(URI uri,Connector connector, Handler<AsyncResult<String>> readyHandler){
-        for (Resource resource:connector.getCatalog().getOffer()){
-            String dataset = Json.encode(resource);
-            dcatTransformerService.transformJsonForVirtuoso(dataset,stringAsyncResult -> {
-                Model model = ModelFactory.createDefaultModel();
-                try {
-                    model.read(IOUtils.toInputStream(stringAsyncResult.result(), "UTF-8"), null, "JSON-LD");
-                    handlePutGraph(uri,resource.getId().toString(),model,readyHandler);
-                } catch (IOException e) {
-                    e.printStackTrace();
-                }
-            });
-        }
-    }
-
-    public void register(URI uri, Connector connector, Handler<AsyncResult<String>> readyHandler) {
-        String catalogueId = UUID.randomUUID().toString();
-        Future<String> catalogueFuture = Future.future();
-        Future<String> connectorFuture = Future.future();
-
-        Map<String, Future<String>> datassetFutures = new HashMap<>();
-        initTransformations(connector,connectorFuture, catalogueFuture, datassetFutures);
-        resolveCatalogueId(connector.getId().toString(),next->{
-            if (next.succeeded()) {
-                update(uri,connector,readyHandler);
-            }
-            else {
-                putGraphConnector(uri,connectorFuture,connectorFutureAsync->{
-                    if (connectorFutureAsync.succeeded()){
-                        catalogueFuture.setHandler(catalogueTTLResult ->
-                                handleCatalogueExternal(catalogueTTLResult, catalogueId, piveauCatalogueReply ->
-                                        handleCatalogueInternal(piveauCatalogueReply, connector.getId().toString(), internalCatalogueReply ->
-                                                handleDatasets(uri,connector,internalCatalogueReply, datassetFutures,readyHandler))));
-                    }
-                    else {
-                        handleRejectionMessage(RejectionReason.INTERNAL_RECIPIENT_ERROR, uri, readyHandler);
-                    }
-                });
-            }
-        });
-
-    }
-
-    public void unregister(URI uri, Connector connector, Handler<AsyncResult<String>> readyHandler) {
-        Map<String, Future> datasetDeleteFutures = new HashMap<>();
-
-        resolveCatalogueId(connector.getId().toString(), catalogueIdResult -> {
-            if (catalogueIdResult.succeeded()) {
-                tsConnector.deleteGraph(connector.getId().toString(),reply->{});
-                dataAssetIdsOfCatalogue(catalogueIdResult.result(), piveauDatasetIds -> {
-
-                    resolvePiveauIds(piveauDatasetIds,mapAsyncResult -> {
-                        for (String externalId : mapAsyncResult.result().keySet()){
-                            tsConnector.deleteGraph(externalId,reply->{});
-                        }});
-
-                    if (piveauDatasetIds.succeeded()) {
-                        if (!piveauDatasetIds.result().isEmpty()) {
-                            for (String id : piveauDatasetIds.result()) {
-                                Future datasetDeleteFuture = Future.future();
-                                datasetDeleteFutures.put(id, datasetDeleteFuture);
-                                deleteDatasetPiveau(id, catalogueIdResult.result(), next -> deleteDatasetInDatabase(next, DELETE_DS_UPDATE, id, datasetDeleteFutures));
-                            }
-                        }
-                        for (Resource dataasset : connector.getCatalog().getOffer()) {
-                            Future datasetDeleteFuture = Future.future();
-                            datasetDeleteFutures.put(dataasset.getId().toString(), datasetDeleteFuture);
-                            databaseService.query(SELECT_DS_STATEMENT, new JsonArray().add(dataasset.getId().toString()), datasetIdreply -> {
-                                if (datasetIdreply.succeeded()) {
-                                    if (!datasetIdreply.result().isEmpty()) {
-                                        String datasePiveautId = datasetIdreply.result().get(0).getString("internal_id");
-                                        String datasetIdsId = datasetIdreply.result().get(0).getString("external_id");
-                                        deleteDatasetPiveau(datasePiveautId, catalogueIdResult.result(), externalDeleteReply ->
-                                                deleteDatasetInternal(externalDeleteReply, datasePiveautId, datasetIdsId, datasetDeleteFutures));
-                                    } else {
-                                        datasetDeleteFuture.complete();
-                                    }
-                                } else {
-                                    LOGGER.error(datasetIdreply.cause());
-                                    handleRejectionMessage(RejectionReason.INTERNAL_RECIPIENT_ERROR, uri, readyHandler);
-                                }
-                            });
-                        }
-                        handleCatalogue(uri, new ArrayList<>(datasetDeleteFutures.values()), catalogueIdResult.result(), readyHandler);
-                    } else {
-                        LOGGER.error(piveauDatasetIds.cause());
-                        handleRejectionMessage(RejectionReason.NOT_FOUND, uri, readyHandler);
-                    }
-                });
-            } else {
-                handleRejectionMessage(RejectionReason.INTERNAL_RECIPIENT_ERROR, uri, readyHandler);
-            }
-        });
-    }
-
-    private void updateDataset(Map<String, Future<String>> datassetFutures, String messageId, String catalogueId, Map<String, Future> datasetUpdateFutures) {
-        resolveDatasetsForUpdate(messageId, reply -> {
-            brokerMessageService.createDataSet(datassetFutures.get(messageId).result(), reply.result(), catalogueId, datasetReply -> {
-                if (datasetReply.succeeded()) {
-                    datasetUpdateFutures.get(messageId).complete();
-                } else {
-                    LOGGER.error(datasetReply.cause());
-                    datasetUpdateFutures.get(messageId).fail(datasetReply.cause());
-                }
-            });
-        });
-    }
-
-    private void handleCatalogueExternal(AsyncResult<String> catalogue, String catalogueId, Handler<AsyncResult<String>> next) {
-        if (catalogue.succeeded()) {
-            brokerMessageService.createCatalogue(catalogue.result(), catalogueId, catalogueReply -> {
-                if (catalogueReply.succeeded()) {
-                    next.handle(Future.succeededFuture(catalogueId));
-                } else {
-                    LOGGER.error(catalogueReply.cause());
-                    next.handle(Future.failedFuture(catalogueReply.cause()));
-                }
-            });
-        } else {
-            next.handle(Future.failedFuture(catalogue.cause()));
-        }
-    }
-
-    private void handleCatalogueInternal(AsyncResult<String> reply, String connectorId, Handler<AsyncResult<String>> next) {
-        if (reply.succeeded()) {
-            databaseService.update(INSERT_CAT_STATEMENT, new JsonArray().add(connectorId).add(reply.result()), cataloguePersistenceReply -> {
-                if (cataloguePersistenceReply.succeeded()) {
-                    next.handle(Future.succeededFuture(reply.result()));
-                } else {
-                    LOGGER.error(cataloguePersistenceReply.cause());
-                    next.handle(Future.failedFuture(cataloguePersistenceReply.cause()));
-                }
-            });
-        } else {
-            next.handle(Future.failedFuture(reply.cause()));
-        }
-    }
-
-    private void updateDatasets(Connector connector,URI uri, Map<String, Future<String>> datassetFutures, String catalogueId, Handler<AsyncResult<String>> readyHandler) {
-        Set<String> messageDatasetIds = datassetFutures.keySet();
-
-        dataAssetIdsOfCatalogue(catalogueId, piveauDatasetIds -> resolvePiveauIds(piveauDatasetIds, result -> {
-            if (result.succeeded()) {
-                Map<String, Future> datasetUpdateFutures = new HashMap<>();
-                Set<String> availableDatasetIds = new HashSet(result.result().keySet());
-
-                for (String id :availableDatasetIds) {
-                    tsConnector.deleteGraph(id,r->{});
-                }
-                putDatasetsGraph(uri,connector,r->{});
-
-                availableDatasetIds.addAll(messageDatasetIds);
-                for (String messageDatasetId : availableDatasetIds) {
-                    datasetUpdateFutures.put(messageDatasetId, Future.future());
-                }
-
-                Collection<String> piveauIds = result.result().keySet();
-                if (piveauIds.isEmpty() && messageDatasetIds.isEmpty()) {
-                    handleSucceededMessage(uri, readyHandler);
-                } else {
-                    for (String messageId : messageDatasetIds) {
-                        if (piveauIds.contains(messageId)) {
-                            updateDataset(datassetFutures, messageId, catalogueId, datasetUpdateFutures);
-                        } else {
-                            String internalId = UUID.randomUUID().toString();
-                            createDataSet(datassetFutures, messageId, internalId, catalogueId, datasetUpdateFutures);
-                        }
-                        piveauIds.remove(messageId);
-                    }
-                    for (String orphan : piveauIds) {
-                        deleteDatasetPiveau(result.result().get(orphan), catalogueId, res -> deleteDatasetInDatabase(res, "DELETE FROM datasets WHERE external_id = ?", orphan, datasetUpdateFutures));
-                    }
-                    CompositeFuture.all(new ArrayList<>(datasetUpdateFutures.values())).setHandler(ac -> {
-                        if (ac.succeeded()) {
-                            handleSucceededMessage(uri, readyHandler);
-                        } else {
-                            handleRejectionMessage(RejectionReason.INTERNAL_RECIPIENT_ERROR, uri, readyHandler);
-                        }
-                    });
-                }
-            } else {
-                handleRejectionMessage(RejectionReason.NOT_FOUND, uri, readyHandler);
-            }
-        }));
-
-    }
-
-    private void handleDatasets(URI uri,Connector connector,AsyncResult<String> catalogueIdResult, java.util.Map<String, Future<String>> datassetFutures, Handler<AsyncResult<String>> readyHandler) {
-        if (catalogueIdResult.succeeded()) {
-            CompositeFuture.all(new ArrayList<>(datassetFutures.values())).setHandler(dataassetCreateReply -> {
-                if (dataassetCreateReply.succeeded()) {
-                    Map<String, Future> dataassetCreateFutures = new HashMap<>();
-                    for (String datasetExternalId : datassetFutures.keySet()) {
-                        dataassetCreateFutures.put(datasetExternalId, Future.future());
-                        String datasetId = UUID.randomUUID().toString();
-                        createDataSet(datassetFutures, datasetExternalId, datasetId, catalogueIdResult.result(), dataassetCreateFutures);
-                    }
-                    CompositeFuture.all(new ArrayList<>(dataassetCreateFutures.values())).setHandler(ac -> {
-                        if (ac.succeeded()) {
-                            putDatasetsGraph(uri,connector,readyHandler);
-                        } else {
-                            LOGGER.error(ac.cause());
-                            handleRejectionMessage(RejectionReason.INTERNAL_RECIPIENT_ERROR, uri, readyHandler);
-                        }
-                    });
-                } else {
-                    LOGGER.error(dataassetCreateReply.cause());
-                    handleRejectionMessage(RejectionReason.INTERNAL_RECIPIENT_ERROR, uri, readyHandler);
-                }
-            });
-        } else {
-            handleRejectionMessage(RejectionReason.INTERNAL_RECIPIENT_ERROR, uri, readyHandler);
-        }
-    }
-
-    private void handleCatalogue(URI uri, List<Future> datasetDeleteFutures, String catalogueIdResult, Handler<AsyncResult<String>> readyHandler) {
-        CompositeFuture.all(datasetDeleteFutures).setHandler(reply -> {
-            if (reply.succeeded()) {
-                deleteCatalogueExternal(reply, catalogueIdResult, externalCatalogueDeleteReply ->
-                        deleteCatalogueInternal(uri, externalCatalogueDeleteReply, catalogueIdResult, readyHandler));
-            } else {
-                handleRejectionMessage(RejectionReason.INTERNAL_RECIPIENT_ERROR, uri, readyHandler);
-            }
-        });
-    }
-
-    private void resolveCatalogueId(String connectorId, Handler<AsyncResult<String>> next) {
-        databaseService.query(SELECT_CAT_STATEMENT, new JsonArray().add(connectorId), cataloguePersistenceReply -> {
-            if (cataloguePersistenceReply.succeeded() && !cataloguePersistenceReply.result().isEmpty()) {
-                LOGGER.info("internal ID resolved: " + cataloguePersistenceReply.result().get(0).getString("internal_id"));
-                next.handle(Future.succeededFuture(cataloguePersistenceReply.result().get(0).getString("internal_id")));
-            } else {
-                LOGGER.error(cataloguePersistenceReply.cause());
-                next.handle(Future.failedFuture(cataloguePersistenceReply.cause()));
-            }
-        });
-    }
-
-    private void resolveDatasetsForUpdate(String dataassetIdExternal, Handler<AsyncResult<String>> next) {
-        databaseService.query(SELECT_DS_STATEMENT, new JsonArray().add(dataassetIdExternal), datasetPersistenceReply -> {
-            if (datasetPersistenceReply.succeeded()) {
-                if (!datasetPersistenceReply.result().isEmpty()) {
-                    String id = datasetPersistenceReply.result().get(0).getString("internal_id");
-                    next.handle(Future.succeededFuture(id));
-                } else {
-                    String datId = UUID.randomUUID().toString();
-                    next.handle(Future.succeededFuture(datId));
-                }
-            } else {
-                LOGGER.error(datasetPersistenceReply.cause());
-                next.handle(Future.failedFuture(datasetPersistenceReply.cause()));
-            }
-        });
-    }
-
-    private void deleteDatasetInDatabase(AsyncResult<Void> reply, String update, String idsId, Map<String, Future> datasetdeleteFutures) {
-        if (reply.succeeded()) {
-            databaseService.update(update, new JsonArray().add(idsId), internalDatasetDeleteResult -> {
-                if (reply.succeeded()) {
-                    datasetdeleteFutures.get(idsId).complete();
-                    LOGGER.info("DataAsset From Database successfully deleted");
-                } else {
-                    LOGGER.error(reply.cause());
-                    datasetdeleteFutures.get(idsId).fail(reply.cause());
-                }
-            });
-        } else {
-            LOGGER.error("DataAsset delete failed");
-        }
-    }
-
-    private void resolvePiveauIds(AsyncResult<List<String>> piveauDatasetIds, Handler<AsyncResult<Map<String, String>>> completer) {
-        Map<String, Future<List<JsonObject>>> piveau2IDSResolveFutureMap = new HashMap<>();
-        if (piveauDatasetIds.succeeded()) {
-            for (String piveauId : piveauDatasetIds.result()) {
-                Future idsResolve = Future.future();
-                piveau2IDSResolveFutureMap.put(piveauId, idsResolve);
-                databaseService.query(RESOLVE_DS_STATEMENT, new JsonArray().add(piveauId), idsResolve.completer());
-            }
-            CompositeFuture.all(new ArrayList<>(piveau2IDSResolveFutureMap.values())).setHandler(ac -> {
-                if (ac.succeeded()) {
-                    Map<String, String> resultMap = new HashMap<>();
-                    for (String piveauId : piveau2IDSResolveFutureMap.keySet()) {
-                        resultMap.put(piveau2IDSResolveFutureMap.get(piveauId).result().get(0).getString("external_id"), piveauId);
-                    }
-                    completer.handle(Future.succeededFuture(resultMap));
-                } else {
-                    completer.handle(Future.failedFuture(ac.cause()));
-                }
-            });
-        } else {
-            completer.handle(Future.failedFuture(piveauDatasetIds.cause()));
-        }
-
-    }
-
-    private void dataAssetIdsOfCatalogue(String catalogueInternalId, Handler<AsyncResult<List<String>>> asyncResultHandler) {
-        brokerMessageService.getAllDatasetsOfCatalogue(catalogueInternalId, jsonReply -> {
-            if (jsonReply.succeeded()) {
-                ArrayList<String> ids = new ArrayList<>();
-                if (!jsonReply.result().isEmpty()) {
-                    for (Object jsonObject : jsonReply.result().getJsonArray("@graph")) {
-                        JsonObject dataAsset = (JsonObject) jsonObject;
-                        String idString = dataAsset.getString("@id");
-                        String containsString = "https://ids.fokus.fraunhofer.de/set/data/";
-                        if (idString.toLowerCase().contains(containsString.toLowerCase())) {
-                            String dataAssetId = idString.substring(containsString.length());
-                            ids.add(dataAssetId);
-                        }
-                    }
-                }
-                asyncResultHandler.handle(Future.succeededFuture(ids));
-            } else {
-                LOGGER.error("Can not get Ids of Catalogue");
-                asyncResultHandler.handle(Future.failedFuture(jsonReply.cause()));
-            }
-        });
-    }
-
-    private void createDataSet(Map<String, Future<String>> datassetFutures, String datasetExternalId, String dataSetId, String catalogueId, Map<String, Future> datasetUpdateFutures) {
-        brokerMessageService.createDataSet(datassetFutures.get(datasetExternalId).result(), dataSetId, catalogueId, datasetReply -> {
-            if (datasetReply.succeeded()) {
-                databaseService.update(INSERT_DS_STATEMENT, new JsonArray().add(datasetExternalId).add(dataSetId), datasetPersistenceReply2 -> {
-                    if (datasetPersistenceReply2.succeeded()) {
-                        datasetUpdateFutures.get(datasetExternalId).complete();
-                    } else {
-                        datasetUpdateFutures.get(datasetExternalId).fail(datasetPersistenceReply2.cause());
-                    }
-                });
-            } else {
-                LOGGER.error(datasetReply.cause());
-            }
-        });
-    }
-
-    private void deleteDatasetPiveau(String datasetId, String catalogueId, Handler<AsyncResult<Void>> next) {
-        brokerMessageService.deleteDataSet(datasetId, catalogueId, deleteAsset -> {
-            if (deleteAsset.succeeded()) {
-                next.handle(Future.succeededFuture());
-            } else {
-                LOGGER.error(deleteAsset.cause());
-                next.handle(Future.failedFuture(deleteAsset.cause()));
-            }
-        });
-    }
-
-    private void deleteDatasetInternal(AsyncResult<Void> reply, String datasetPiveauId, String datasetIDSId, Map<String, Future> datasetDeleteFutures) {
-        if (reply.succeeded()) {
-            databaseService.update(DELETE_DS_UPDATE, new JsonArray().add(datasetPiveauId), internalDatasetDeleteResult -> {
-                if (reply.succeeded()) {
-                    LOGGER.info("DataAsset From Database successfully deleted");
-                    datasetDeleteFutures.get(datasetIDSId).complete();
-                } else {
-                    datasetDeleteFutures.get(datasetIDSId).fail(reply.cause());
-                    LOGGER.error(reply.cause());
-                }
-            });
-        } else {
-            datasetDeleteFutures.get(datasetPiveauId).fail(reply.cause());
-        }
-    }
-
-    private void deleteCatalogueExternal(AsyncResult<CompositeFuture> reply, String catalogueInternalId, Handler<AsyncResult> next) {
-        if (reply.succeeded()) {
-            brokerMessageService.deleteCatalogue(catalogueInternalId, deleteCatalogueReply -> {
-                if (deleteCatalogueReply.succeeded()) {
-                    next.handle(Future.succeededFuture());
-                } else {
-                    LOGGER.error(deleteCatalogueReply.cause());
-                    next.handle(Future.failedFuture(deleteCatalogueReply.cause()));
-                }
-            });
-        } else {
-            next.handle(Future.failedFuture(reply.cause()));
-        }
-    }
-
-    private void deleteCatalogueInternal(URI uri, AsyncResult<Void> reply, String catalogueInternalId, Handler<AsyncResult<String>> readyHandler) {
-        if (reply.succeeded()) {
-            databaseService.update(DELETE_CAT_STATEMENT, new JsonArray().add(catalogueInternalId), deleteCatalogueReply -> {
-                if (deleteCatalogueReply.succeeded()) {
-                    LOGGER.info("Catalogue From Database succeeded deleted");
-                    handleSucceededMessage(uri, readyHandler);
-                } else {
-                    LOGGER.error(deleteCatalogueReply.cause());
-                    handleRejectionMessage(RejectionReason.INTERNAL_RECIPIENT_ERROR, uri, readyHandler);
-                }
-            });
-        } else {
-            LOGGER.error(reply.cause());
-            handleRejectionMessage(RejectionReason.INTERNAL_RECIPIENT_ERROR, uri, readyHandler);
-        }
-    }
-
-    private void initTransformations(Connector connector,Future<String> connectorFuture, Future<String> catalogueFuture, Map<String, Future<String>> datassetFutures) {
-        String con = Json.encode(connector);
-        dcatTransformerService.transformCatalogue(con,null, catalogueFuture.completer());
-        dcatTransformerService.transformJsonForVirtuoso(con,connectorFuture.completer());
-        if (connector.getCatalog() != null) {
-            for (Resource resource : connector.getCatalog().getOffer()) {
-                StaticEndpoint staticEndpoint = (StaticEndpoint) resource.getResourceEndpoint().get(0);
-                String date = staticEndpoint.getEndpointArtifact().getCreationDate().toString();
-                Future<String> dataassetFuture = Future.future();
-                datassetFutures.put(resource.getId().toString(), dataassetFuture);
-                dcatTransformerService.transformDataset(Json.encode(resource),date, dataassetFuture.completer());
-            }
-        }
-    }
-
-    private void createSucceededMessage(URI uriOfHeader, Handler<AsyncResult<MessageProcessedNotification>> resultHandler) {
+    private void createSucceededMessage(URI correlationMessageURI, Handler<AsyncResult<MessageProcessedNotification>> resultHandler) {
         try {
             String uuid = UUID.randomUUID().toString();
             MessageProcessedNotification message = new MessageProcessedNotificationBuilder(new URI(uuid))
-                    ._correlationMessage_(uriOfHeader)
+                    ._correlationMessage_(correlationMessageURI)
                     ._issued_(getDate())
                     ._modelVersion_("2.0.0")
                     ._issuerConnector_(new URI("URI"))
@@ -658,13 +53,31 @@ public class IDSService {
         }
     }
 
-    private void createRejectionMessage(RejectionReason rejectionReason, URI uriOfHeader, Handler<AsyncResult<RejectionMessage>> resultHandler) {
+    public ResultMessage createResultMessage(URI correlationMessageURI){
+        try {
+            return new ResultMessageBuilder()
+                    ._correlationMessage_(correlationMessageURI)
+                    ._modelVersion_(INFO_MODEL_VERSION)
+                    ._issued_(getDate())
+                    ._issuerConnector_(new URI("URI"))
+                    ._securityToken_(new DynamicAttributeTokenBuilder()
+                            ._tokenFormat_(TokenFormat.JWT)
+                            ._tokenValue_(getJWT())
+                            .build())
+                    .build();
+        } catch (URISyntaxException e) {
+            LOGGER.error(e);
+        }
+        return null;
+    }
+
+    private void createRejectionMessage(RejectionReason rejectionReason, URI correlationMessageURI, Handler<AsyncResult<RejectionMessage>> resultHandler) {
         try {
             String uuid = UUID.randomUUID().toString();
             RejectionMessage message = new RejectionMessageBuilder(new URI(uuid))
-                    ._correlationMessage_(uriOfHeader)
+                    ._correlationMessage_(correlationMessageURI)
                     ._issued_(getDate())
-                    ._modelVersion_("2.0.0")
+                    ._modelVersion_(INFO_MODEL_VERSION)
                     ._issuerConnector_(new URI("URI"))
                     ._securityToken_(new DynamicAttributeTokenBuilder()
                             ._tokenFormat_(TokenFormat.JWT)
@@ -677,6 +90,20 @@ public class IDSService {
             LOGGER.error(e);
             resultHandler.handle(Future.failedFuture(e));
         }
+    }
+
+    private SelfDescriptionResponse createSelfDescriptionResponse(JsonObject jsonObject, URI correlationMessageURI) {
+
+        try {
+            return new SelfDescriptionResponseBuilder(new URI("broker#SelfDescriptionResponse"))
+                    ._issued_(getDate())
+                    ._correlationMessage_(correlationMessageURI)
+                    ._modelVersion_(INFO_MODEL_VERSION)
+                    .build();
+        } catch (URISyntaxException e) {
+            LOGGER.error(e);
+        }
+        return null;
     }
 
     private XMLGregorianCalendar getDate() {
@@ -692,6 +119,95 @@ public class IDSService {
 
     private String getJWT() {
         return "abcdefg12";
+    }
+
+    public void getSelfDescriptionResponse(URI uri, Handler<AsyncResult<String>> resultHandler) {
+        JsonObject jsonObject = new JsonObject();
+        SelfDescriptionResponse selfDescriptionResponse = createSelfDescriptionResponse(jsonObject, uri);
+        buildBroker(jsonObject, brokerResult -> {
+            if(brokerResult.succeeded()) {
+                ContentBody contentBody = new StringBody(Json.encodePrettily(selfDescriptionResponse), ContentType.create("application/json"));
+                ContentBody payload = new StringBody(Json.encodePrettily(brokerResult.result()), ContentType.create("application/json"));
+                createMultiPartMessage(uri, contentBody, payload, resultHandler);
+            } else {
+                LOGGER.error(brokerResult.cause());
+                resultHandler.handle(Future.failedFuture(brokerResult.cause()));
+            }
+        });
+    }
+
+    public void buildBroker(JsonObject config, Handler<AsyncResult<Broker>> next) {
+        listOfExternalIds(arrayListAsyncResult -> {
+            if(arrayListAsyncResult.succeeded()) {
+                Optional<Broker> brokerOptional = createBroker(config, arrayListAsyncResult.result());
+                if(brokerOptional.isPresent()) {
+                    next.handle(Future.succeededFuture(brokerOptional.get()));
+                }
+                else {
+                    LOGGER.error("Optional not present.");
+                    next.handle(Future.failedFuture("Optional not present."));
+                }
+            } else {
+                next.handle(Future.failedFuture(arrayListAsyncResult.cause()));
+            }
+        });
+    }
+
+    private Optional<Broker> createBroker(JsonObject config, ArrayList<URI> connectorURIs){
+        try {
+            return  Optional.of(new BrokerBuilder((new URI("payload#Broker")))
+                    ._maintainer_(new URI("maintainer"))
+                    ._version_("0.0.1")
+                    ._curator_(new URI("curator"))
+                    ._connector_(connectorURIs)
+                    ._outboundModelVersion_(INFO_MODEL_VERSION)
+                    ._inboundModelVersion_(new ArrayList<>(Arrays.asList(SUPPORTED_INFO_MODEL_VERSIONS)))
+                    .build());
+        } catch (URISyntaxException e) {
+            LOGGER.error(e);
+        }
+        return Optional.empty();
+    }
+
+    private void listOfExternalIds(Handler<AsyncResult<ArrayList<URI>>> next) {
+        ArrayList<URI> externalIds = new ArrayList<>();
+        catalogueManager.find(data -> {
+            if (data.succeeded()) {
+                for (JsonObject jsonObject : data.result()) {
+                    try {
+                        externalIds.add(new URI(jsonObject.getString("external_id")));
+                    } catch (URISyntaxException e) {
+                        e.printStackTrace();
+                    }
+                }
+                next.handle(Future.succeededFuture(externalIds));
+            } else {
+                LOGGER.error(data.cause());
+                next.handle(Future.failedFuture(data.cause()));
+            }
+        });
+    }
+
+    public void createMultiPartMessage(URI uri, Object headerObject, Object payloadObject, Handler<AsyncResult<String>> resultHandler) {
+
+        ContentBody contentBody = new StringBody(Json.encodePrettily(headerObject), ContentType.create("application/json"));
+        ContentBody payload = new StringBody(Json.encodePrettily(payloadObject), ContentType.create("application/json"));
+
+        MultipartEntityBuilder multipartEntityBuilder = MultipartEntityBuilder.create()
+                .setBoundary("IDSMSGPART")
+                .setCharset(StandardCharsets.UTF_8)
+                .setContentType(ContentType.APPLICATION_JSON)
+                .addPart("header", contentBody)
+                .addPart("payload", payload);
+
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        try {
+            multipartEntityBuilder.build().writeTo(out);
+            resultHandler.handle(Future.succeededFuture(out.toString()));
+        } catch (IOException e) {
+            LOGGER.error(e);
+            handleRejectionMessage(RejectionReason.INTERNAL_RECIPIENT_ERROR,uri,resultHandler);
+        }
     }
 
     private Buffer createMultipartMessage(Message message, Connector connector) {
@@ -715,7 +231,7 @@ public class IDSService {
         return null;
     }
 
-    private void handleSucceededMessage(URI uri, Handler<AsyncResult<String>> readyHandler) {
+    public void handleSucceededMessage(URI uri, Handler<AsyncResult<String>> readyHandler) {
         createSucceededMessage(uri, messageProcessedNotificationAsyncResult -> {
             if (messageProcessedNotificationAsyncResult.succeeded()) {
                 Buffer buffer = createMultipartMessage(messageProcessedNotificationAsyncResult.result(), null);
@@ -736,58 +252,5 @@ public class IDSService {
             }
         });
     }
-
-    public SelfDescriptionResponse buildSelfDescriptionResponse(JsonObject jsonObject) {
-
-        try {
-            return new SelfDescriptionResponseBuilder(new URI("broker#SelfDescriptionResponse"))
-                    ._issued_(getDate())
-                    ._modelVersion_(INFO_MODEL_VERSION)
-                    .build();
-        } catch (URISyntaxException e) {
-            LOGGER.error(e);
-        }
-        return null;
-    }
-
-    public void buildBroker(JsonObject config, Handler<AsyncResult<Broker>> next) {
-        Future<ArrayList<URI>> listFutureExternalIds = Future.future();
-        listOfExternalIds(listFutureExternalIds.completer());
-        listFutureExternalIds.setHandler(arrayListAsyncResult -> {
-            try {
-                BrokerBuilder brokerBuilder = new BrokerBuilder((new URI("payload#Broker")))
-                        ._maintainer_(new URI("maintainer"))
-                        ._version_("0.0.1")
-                        ._curator_(new URI("curator"))
-                        ._connector_(listFutureExternalIds.result())
-                        ._outboundModelVersion_(INFO_MODEL_VERSION)
-                        ._inboundModelVersion_(new ArrayList<>(Arrays.asList(SUPPORTED_INFO_MODEL_VERSIONS)));
-                next.handle(Future.succeededFuture(brokerBuilder.build()));
-            } catch (Exception e) {
-                LOGGER.error(e);
-                next.handle(Future.failedFuture(e.getMessage()));
-            }
-        });
-    }
-
-    private void listOfExternalIds(Handler<AsyncResult<ArrayList<URI>>> next) {
-        ArrayList<URI> externalIds = new ArrayList<>();
-        databaseService.query("SELECT * FROM catalogues", new JsonArray(), data -> {
-            if (data.succeeded()) {
-                for (JsonObject jsonObject : data.result()) {
-                    try {
-                        externalIds.add(new URI(jsonObject.getString("external_id")));
-                    } catch (URISyntaxException e) {
-                        e.printStackTrace();
-                    }
-                }
-                next.handle(Future.succeededFuture(externalIds));
-            } else {
-                LOGGER.error(data.cause());
-                next.handle(Future.failedFuture(data.cause()));
-            }
-        });
-    }
-
 
 }

@@ -1,4 +1,4 @@
-package de.fraunhofer.fokus.ids.services.brokerMessageService;
+package de.fraunhofer.fokus.ids.services.piveauMessageService;
 
 import io.vertx.core.AsyncResult;
 import io.vertx.core.Future;
@@ -10,15 +10,15 @@ import io.vertx.core.logging.Logger;
 import io.vertx.core.logging.LoggerFactory;
 import io.vertx.ext.web.client.WebClient;
 
-public class BrokerMessageServiceImpl implements BrokerMessageService{
-    private Logger LOGGER = LoggerFactory.getLogger(BrokerMessageServiceImpl.class.getName());
+public class PiveauMessageServiceImpl implements PiveauMessageService {
+    private Logger LOGGER = LoggerFactory.getLogger(PiveauMessageServiceImpl.class.getName());
     private WebClient webClient;
     private String piveauHost;
     private Vertx vertx;
     private int piveauPort;
     private String piveauAPIkey;
 
-    public BrokerMessageServiceImpl(Vertx vertx, WebClient webClient, int piveauPort, String piveauHost, String piveauAPIkey, Handler<AsyncResult<BrokerMessageService>> readyHandler) {
+    public PiveauMessageServiceImpl(Vertx vertx, WebClient webClient, int piveauPort, String piveauHost, String piveauAPIkey, Handler<AsyncResult<PiveauMessageService>> readyHandler) {
         this.webClient = webClient;
         this.piveauHost = piveauHost;
         this.piveauPort = piveauPort;
@@ -88,7 +88,7 @@ public class BrokerMessageServiceImpl implements BrokerMessageService{
     }
 
     @Override
-    public BrokerMessageService createCatalogue(String body, String id, Handler<AsyncResult<Void>> readyHandler) {
+    public PiveauMessageService createCatalogue(String body, String id, Handler<AsyncResult<Void>> readyHandler) {
         put(piveauPort,piveauHost,"/catalogues/"+id, body, jsonObjectAsyncResult -> {
             if (jsonObjectAsyncResult.succeeded()) {
                 LOGGER.info("Catalogue "+id+ " successfully registered.");
@@ -104,7 +104,7 @@ public class BrokerMessageServiceImpl implements BrokerMessageService{
     }
 
     @Override
-    public BrokerMessageService createDataSet(String body, String id, String catalogue, Handler<AsyncResult<Void>> readyHandler) {
+    public PiveauMessageService createDataSet(String body, String id, String catalogue, Handler<AsyncResult<Void>> readyHandler) {
         put(piveauPort,piveauHost,"/datasets/"+id+"?catalogue="+catalogue, body, jsonObjectAsyncResult -> {
             if (jsonObjectAsyncResult.succeeded()) {
                 LOGGER.info("Dataset "+id+ " successfully registered.");
@@ -120,7 +120,7 @@ public class BrokerMessageServiceImpl implements BrokerMessageService{
     }
 
     @Override
-    public BrokerMessageService getAllDatasetsOfCatalogue(String catalogueId ,Handler<AsyncResult<JsonObject>> readyHandler) {
+    public PiveauMessageService getAllDatasetsOfCatalogue(String catalogueId , Handler<AsyncResult<JsonObject>> readyHandler) {
         get(piveauPort,piveauHost,"/datasets?catalogue="+catalogueId, jsonObjectAsyncResult -> {
             if(jsonObjectAsyncResult.succeeded()) {
                 readyHandler.handle(Future.succeededFuture(jsonObjectAsyncResult.result()));   }
@@ -133,7 +133,7 @@ public class BrokerMessageServiceImpl implements BrokerMessageService{
     }
 
     @Override
-    public BrokerMessageService deleteDataSet( String id, String catalogue, Handler<AsyncResult<Void>> readyHandler) {
+    public PiveauMessageService deleteDataSet(String id, String catalogue, Handler<AsyncResult<Void>> readyHandler) {
         delete(piveauPort,piveauHost,"/datasets/"+id+"?catalogue="+catalogue, jsonObjectAsyncResult -> {
             if (jsonObjectAsyncResult.succeeded()) {
                 LOGGER.info("Dataset "+id+ " successfully deleted.");
@@ -148,7 +148,7 @@ public class BrokerMessageServiceImpl implements BrokerMessageService{
     }
 
     @Override
-    public BrokerMessageService deleteCatalogue(String id, Handler<AsyncResult<Void>> readyHandler) {
+    public PiveauMessageService deleteCatalogue(String id, Handler<AsyncResult<Void>> readyHandler) {
         delete(piveauPort,piveauHost,"/catalogues/"+id, jsonObjectAsyncResult -> {
             if (jsonObjectAsyncResult.succeeded()) {
                 LOGGER.info("Catalogue "+id+ " successfully deleted.");

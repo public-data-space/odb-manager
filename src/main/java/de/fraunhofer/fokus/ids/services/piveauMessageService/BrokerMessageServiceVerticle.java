@@ -1,4 +1,4 @@
-package de.fraunhofer.fokus.ids.services.brokerMessageService;
+package de.fraunhofer.fokus.ids.services.piveauMessageService;
 
 import io.vertx.config.ConfigRetriever;
 import io.vertx.config.ConfigRetrieverOptions;
@@ -26,12 +26,12 @@ public class BrokerMessageServiceVerticle extends AbstractVerticle {
 
         retriever.getConfig(ar -> {
             if (ar.succeeded()) {
-                BrokerMessageService.create(vertx, webClient, ar.result().getInteger("PIVEAU_HUB_PORT"), ar.result().getString("PIVEAU_HUB_HOST"), ar.result().getString("PIVEAU_HUB_APIKEY"),  ready -> {
+                PiveauMessageService.create(vertx, webClient, ar.result().getInteger("PIVEAU_HUB_PORT"), ar.result().getString("PIVEAU_HUB_HOST"), ar.result().getString("PIVEAU_HUB_APIKEY"), ready -> {
                     if (ready.succeeded()) {
                         ServiceBinder binder = new ServiceBinder(vertx);
                         binder
-                                .setAddress("brokerMessageService")
-                                .register(BrokerMessageService.class, ready.result());
+                                .setAddress("piveauMessageService")
+                                .register(PiveauMessageService.class, ready.result());
                         LOGGER.info("Datasourceadapterservice successfully started.");
                         startFuture.complete();
                     } else {
