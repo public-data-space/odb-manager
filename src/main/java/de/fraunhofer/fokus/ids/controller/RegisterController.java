@@ -13,9 +13,9 @@ import io.vertx.core.logging.Logger;
 import io.vertx.core.logging.LoggerFactory;
 
 import java.net.URI;
-import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 public class RegisterController {
     private Logger LOGGER = LoggerFactory.getLogger(RegisterController.class.getName());
@@ -82,7 +82,7 @@ public class RegisterController {
 
     private void handleDatasetCreation( AsyncResult<Void> internalCatalogueCreationReply, URI uri, Connector connector, String catalogueId, Handler<AsyncResult<String>> readyHandler) {
         if (internalCatalogueCreationReply.succeeded()) {
-                    java.util.Map<String, Future> dataassetCreateFutures = new HashMap<>();
+                    java.util.Map<String, Promise> dataassetCreatePromises = new HashMap<>();
                     if (connector.getCatalog() != null) {
                         for (Resource resource : connector.getCatalog().getOffer()) {
                             StaticEndpoint staticEndpoint = (StaticEndpoint) resource.getResourceEndpoint().get(0);
@@ -91,9 +91,9 @@ public class RegisterController {
                                 if (graphResult.succeeded()) {
                                     dcatTransformerService.transformDataset(Json.encode(resource), date, dataSetTransformResult -> {
                                         if (dataSetTransformResult.succeeded()) {
-                                            dataassetCreateFutures.put(resource.getId().toString(), Future.future());
+                                            dataassetCreatePromises.put(resource.getId().toString(), Promise.promise());
                                             String datasetId = UUID.randomUUID().toString();
-                                            createDataSet(dataSetTransformResult.result(), resource.getId().toString(), datasetId, catalogueId, dataassetCreateFutures);
+                                            createDataSet(dataSetTransformResult.result(), resource.getId().toString(), datasetId, catalogueId, dataassetCreatePromises);
                                         } else {
                                             LOGGER.error(dataSetTransformResult.cause());
                                             idsService.handleRejectionMessage(RejectionReason.INTERNAL_RECIPIENT_ERROR, uri, readyHandler);
@@ -105,7 +105,7 @@ public class RegisterController {
                                 }
                             });
                         }
-                        CompositeFuture.all(new ArrayList<>(dataassetCreateFutures.values())).setHandler(ac -> {
+                        CompositeFuture.all(dataassetCreatePromises.values().stream().map(Promise::future).collect(Collectors.toList())).setHandler(ac -> {
                             if (ac.succeeded()) {
                                 idsService.handleSucceededMessage(uri, readyHandler);
                             } else {
@@ -119,7 +119,7 @@ public class RegisterController {
         }
     }
 
-    public void createDataSet(String transformedDataset, String datasetExternalId, String dataSetId, String catalogueId, java.util.Map<String, Future> datasetUpdateFutures) {
+    private void createDataSet(String transformedDataset, String datasetExternalId, String dataSetId, String catalogueId, java.util.Map<String, Promise> datasetUpdateFutures) {
         piveauMessageService.createDataSet(transformedDataset, dataSetId, catalogueId, datasetReply -> {
             if (datasetReply.succeeded()) {
                 datasetManager.create(datasetExternalId, dataSetId, datasetPersistenceReply2 -> {

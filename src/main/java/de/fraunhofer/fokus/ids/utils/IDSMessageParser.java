@@ -2,8 +2,6 @@ package de.fraunhofer.fokus.ids.utils;
 
 import de.fraunhofer.iais.eis.*;
 import io.vertx.core.json.Json;
-import io.vertx.core.json.JsonArray;
-import io.vertx.core.json.JsonObject;
 import io.vertx.core.logging.Logger;
 import io.vertx.core.logging.LoggerFactory;
 

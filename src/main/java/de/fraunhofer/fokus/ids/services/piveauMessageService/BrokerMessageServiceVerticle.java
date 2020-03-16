@@ -5,6 +5,7 @@ import io.vertx.config.ConfigRetrieverOptions;
 import io.vertx.config.ConfigStoreOptions;
 import io.vertx.core.AbstractVerticle;
 import io.vertx.core.Future;
+import io.vertx.core.Promise;
 import io.vertx.core.logging.Logger;
 import io.vertx.core.logging.LoggerFactory;
 import io.vertx.ext.web.client.WebClient;
@@ -14,7 +15,7 @@ public class BrokerMessageServiceVerticle extends AbstractVerticle {
     private Logger LOGGER = LoggerFactory.getLogger(BrokerMessageServiceVerticle.class.getName());
 
     @Override
-    public void start(Future<Void> startFuture) {
+    public void start(Promise<Void> startPromise) {
         WebClient webClient = WebClient.create(vertx);
 
         ConfigStoreOptions confStore = new ConfigStoreOptions()
@@ -33,15 +34,15 @@ public class BrokerMessageServiceVerticle extends AbstractVerticle {
                                 .setAddress("piveauMessageService")
                                 .register(PiveauMessageService.class, ready.result());
                         LOGGER.info("Datasourceadapterservice successfully started.");
-                        startFuture.complete();
+                        startPromise.complete();
                     } else {
                         LOGGER.error(ready.cause());
-                        startFuture.fail(ready.cause());
+                        startPromise.fail(ready.cause());
                     }
                 });
             } else {
                 LOGGER.error(ar.cause());
-                startFuture.fail(ar.cause());
+                startPromise.fail(ar.cause());
             }
         });
     }

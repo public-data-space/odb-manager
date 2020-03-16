@@ -16,6 +16,7 @@ import io.vertx.core.logging.LoggerFactory;
 import java.net.URI;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.stream.Collectors;
 
 public class UnregisterController {
 
@@ -37,7 +38,7 @@ public class UnregisterController {
 
 
     public void unregister(URI uri, Connector connector, Handler<AsyncResult<String>> readyHandler) {
-        java.util.Map<String, Future> datasetDeleteFutures = new HashMap<>();
+        java.util.Map<String, Promise> datasetDeletePromises = new HashMap<>();
 
         catalogueManager.getCatalogueByExternalId(connector.getId().toString(), catalogueIdResult -> {
             if (catalogueIdResult.succeeded()) {
@@ -53,21 +54,21 @@ public class UnregisterController {
                     if (piveauDatasetIds.succeeded()) {
                         if (!piveauDatasetIds.result().isEmpty()) {
                             for (String id : piveauDatasetIds.result()) {
-                                Future datasetDeleteFuture = Future.future();
-                                datasetDeleteFutures.put(id, datasetDeleteFuture);
-                                deleteDatasetPiveau(id, cataloguePiveauId, next -> datasetManager.deleteByInternalId(id, result -> handleDataSetFuture(result, id, datasetDeleteFutures)));
+                                Promise datasetDeletePromise = Promise.promise();
+                                datasetDeletePromises.put(id, datasetDeletePromise);
+                                deleteDatasetPiveau(id, cataloguePiveauId, next -> datasetManager.deleteByInternalId(id, result -> handleDataSetFuture(result, id, datasetDeletePromises)));
                             }
                         }
                         for (Resource dataasset : connector.getCatalog().getOffer()) {
-                            Future datasetDeleteFuture = Future.future();
-                            datasetDeleteFutures.put(dataasset.getId().toString(), datasetDeleteFuture);
+                            Promise datasetDeleteFuture = Promise.promise();
+                            datasetDeletePromises.put(dataasset.getId().toString(), datasetDeleteFuture);
                             datasetManager.findByExternalId(dataasset.getId().toString(), datasetIdreply -> {
                                 if (datasetIdreply.succeeded()) {
                                     if (!datasetIdreply.result().isEmpty()) {
                                         String datasePiveautId = datasetIdreply.result().getString("internal_id");
                                         String datasetIdsId = datasetIdreply.result().getString("external_id");
                                         deleteDatasetPiveau(datasePiveautId, cataloguePiveauId, externalDeleteReply ->
-                                                deleteDatasetInternal(externalDeleteReply, datasePiveautId, datasetIdsId, datasetDeleteFutures));
+                                                deleteDatasetInternal(externalDeleteReply, datasePiveautId, datasetIdsId, datasetDeletePromises));
                                     } else {
                                         datasetDeleteFuture.complete();
                                     }
@@ -77,7 +78,7 @@ public class UnregisterController {
                                 }
                             });
                         }
-                        handleCatalogue(uri, new ArrayList<>(datasetDeleteFutures.values()), cataloguePiveauId, readyHandler);
+                        handleCatalogue(uri, new ArrayList<>(datasetDeletePromises.values()), cataloguePiveauId, readyHandler);
                     } else {
                         LOGGER.error(piveauDatasetIds.cause());
                         idsService.handleRejectionMessage(RejectionReason.NOT_FOUND, uri, readyHandler);
@@ -89,8 +90,8 @@ public class UnregisterController {
         });
     }
 
-    private void handleCatalogue(URI uri, java.util.List<Future> datasetDeleteFutures, String catalogueIdResult, Handler<AsyncResult<String>> readyHandler) {
-        CompositeFuture.all(datasetDeleteFutures).setHandler(reply -> {
+    private void handleCatalogue(URI uri, java.util.List<Promise> datasetDeletePromises, String catalogueIdResult, Handler<AsyncResult<String>> readyHandler) {
+        CompositeFuture.all(datasetDeletePromises.stream().map(Promise::future).collect(Collectors.toList())).setHandler(reply -> {
             if (reply.succeeded()) {
                 deleteCatalogueExternal(reply, catalogueIdResult, externalCatalogueDeleteReply ->
                         deleteCatalogueInternal(uri, externalCatalogueDeleteReply, catalogueIdResult, readyHandler));
@@ -100,18 +101,18 @@ public class UnregisterController {
         });
     }
 
-    private void deleteDatasetInternal(AsyncResult<Void> reply, String datasetPiveauId, String datasetIDSId, java.util.Map<String, Future> datasetDeleteFutures) {
+    private void deleteDatasetInternal(AsyncResult<Void> reply, String datasetPiveauId, String datasetIDSId, java.util.Map<String, Promise> datasetDeletePromises) {
         if (reply.succeeded()) {
             datasetManager.deleteByInternalId(datasetPiveauId, internalDatasetDeleteResult -> {
                 if (reply.succeeded()) {
-                    datasetDeleteFutures.get(datasetIDSId).complete();
+                    datasetDeletePromises.get(datasetIDSId).complete();
                 } else {
-                    datasetDeleteFutures.get(datasetIDSId).fail(reply.cause());
+                    datasetDeletePromises.get(datasetIDSId).fail(reply.cause());
                     LOGGER.error(reply.cause());
                 }
             });
         } else {
-            datasetDeleteFutures.get(datasetPiveauId).fail(reply.cause());
+            datasetDeletePromises.get(datasetPiveauId).fail(reply.cause());
         }
     }
 
@@ -157,29 +158,29 @@ public class UnregisterController {
         });
     }
 
-    private void handleDataSetFuture(AsyncResult<Void> reply, String idsId, java.util.Map<String, Future> datasetdeleteFutures) {
+    private void handleDataSetFuture(AsyncResult<Void> reply, String idsId, java.util.Map<String, Promise> datasetdeletePromises) {
         if (reply.succeeded()) {
-            datasetdeleteFutures.get(idsId).complete();
+            datasetdeletePromises.get(idsId).complete();
             LOGGER.info("DataAsset From Database successfully deleted");
         } else {
             LOGGER.error(reply.cause());
-            datasetdeleteFutures.get(idsId).fail(reply.cause());
+            datasetdeletePromises.get(idsId).fail(reply.cause());
         }
     }
 
     private void resolvePiveauIds(AsyncResult<java.util.List<String>> piveauDatasetIds, Handler<AsyncResult<java.util.Map<String, String>>> completer) {
-        java.util.Map<String, Future<JsonObject>> piveau2IDSResolveFutureMap = new HashMap<>();
+        java.util.Map<String, Promise<JsonObject>> piveau2IDSResolvePromiseMap = new HashMap<>();
         if (piveauDatasetIds.succeeded()) {
             for (String piveauId : piveauDatasetIds.result()) {
-                Future<JsonObject> idsResolve = Future.future();
-                piveau2IDSResolveFutureMap.put(piveauId, idsResolve);
-                datasetManager.findByInternalId(piveauId, idsResolve.completer());
+                Promise<JsonObject> idsResolve = Promise.promise();
+                piveau2IDSResolvePromiseMap.put(piveauId, idsResolve);
+                datasetManager.findByInternalId(piveauId, idsResolve);
             }
-            CompositeFuture.all(new ArrayList<>(piveau2IDSResolveFutureMap.values())).setHandler(ac -> {
+            CompositeFuture.all(piveau2IDSResolvePromiseMap.values().stream().map(Promise::future).collect(Collectors.toList())).setHandler(ac -> {
                 if (ac.succeeded()) {
                     java.util.Map<String, String> resultMap = new HashMap<>();
-                    for (String piveauId : piveau2IDSResolveFutureMap.keySet()) {
-                        resultMap.put(piveau2IDSResolveFutureMap.get(piveauId).result().getString("external_id"), piveauId);
+                    for (String piveauId : piveau2IDSResolvePromiseMap.keySet()) {
+                        resultMap.put(piveau2IDSResolvePromiseMap.get(piveauId).future().result().getString("external_id"), piveauId);
                     }
                     completer.handle(Future.succeededFuture(resultMap));
                 } else {
@@ -189,6 +190,5 @@ public class UnregisterController {
         } else {
             completer.handle(Future.failedFuture(piveauDatasetIds.cause()));
         }
-
     }
 }

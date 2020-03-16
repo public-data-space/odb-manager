@@ -75,7 +75,7 @@ public class UpdateController {
         datasetManager.dataAssetIdsOfCatalogue(catalogueId, piveauDatasetIds ->
                 resolvePiveauIds(piveauDatasetIds, result -> {
             if (result.succeeded()) {
-                java.util.Map<String, Future> datasetUpdateFutures = new HashMap<>();
+                java.util.Map<String, Promise> datasetUpdatePromises = new HashMap<>();
                 Set<String> availableDatasetIds = new HashSet(result.result().keySet());
 
                 for (String id :availableDatasetIds) {
@@ -89,7 +89,7 @@ public class UpdateController {
                 Map<String, Resource> id2ResourceMap = new HashMap<>();
 
                 for(String id : messageDatasetIds){
-                    Resource dataset = connector.getCatalog().getOffer().stream().filter(r -> ((Resource) r).getId().toString().equals(id)).collect(Collectors.toList()).get(0);
+                    Resource dataset = connector.getCatalog().getOffer().stream().filter(r -> r.getId().toString().equals(id)).collect(Collectors.toList()).get(0);
                     id2ResourceMap.put(id, dataset);
 
                     graphManager.create(uri.toString(),Json.encode(dataset),r->{
@@ -100,7 +100,7 @@ public class UpdateController {
                     availableDatasetIds.add(id);
                 }
                 for (String datasetId : availableDatasetIds) {
-                    datasetUpdateFutures.put(datasetId, Future.future());
+                    datasetUpdatePromises.put(datasetId, Promise.promise());
                 }
 
                 Collection<String> piveauIds = result.result().keySet();
@@ -112,10 +112,10 @@ public class UpdateController {
                         dcatTransformerService.transformDataset(Json.encode(dataset), ((StaticEndpoint)dataset.getResourceEndpoint().get(0)).getEndpointArtifact().getCreationDate().toString(), datasetTransformResult -> {
                             if(datasetTransformResult.succeeded()) {
                                 if (piveauIds.contains(messageId)) {
-                                    updateDataset(datasetTransformResult.result(), messageId, catalogueId, datasetUpdateFutures);
+                                    updateDataset(datasetTransformResult.result(), messageId, catalogueId, datasetUpdatePromises);
                                 } else {
                                     String internalId = UUID.randomUUID().toString();
-                                    createDataSet(datasetTransformResult.result(), messageId, internalId, catalogueId, datasetUpdateFutures);
+                                    createDataSet(datasetTransformResult.result(), messageId, internalId, catalogueId, datasetUpdatePromises);
                                 }
                                 piveauIds.remove(messageId);
                             } else {
@@ -124,17 +124,17 @@ public class UpdateController {
                             }
                         });
                     }
-                    CompositeFuture.all(messageDatasetIds.stream().map(id -> datasetUpdateFutures.get(id)).collect(Collectors.toList())).setHandler( mesFutures -> {
+                    CompositeFuture.all(messageDatasetIds.stream().map(datasetUpdatePromises::get).map(Promise::future).collect(Collectors.toList())).setHandler(mesFutures -> {
                         if(mesFutures.succeeded()) {
                             for (String orphan : piveauIds) {
-                                deleteDatasetPiveau(result.result().get(orphan), catalogueId, res -> datasetManager.deleteByExternalId(orphan, deleteResult -> handleDataSetFuture(deleteResult, orphan, datasetUpdateFutures)));
+                                deleteDatasetPiveau(result.result().get(orphan), catalogueId, res -> datasetManager.deleteByExternalId(orphan, deleteResult -> handleDataSetPromise(deleteResult, orphan, datasetUpdatePromises)));
                             }
                         } else {
                             LOGGER.error(mesFutures.cause());
                             idsService.handleRejectionMessage(RejectionReason.INTERNAL_RECIPIENT_ERROR, uri, readyHandler);
                         }
                     });
-                    CompositeFuture.all(new ArrayList<>(datasetUpdateFutures.values())).setHandler(ac -> {
+                    CompositeFuture.all(datasetUpdatePromises.values().stream().map(Promise::future).collect(Collectors.toList())).setHandler(ac -> {
                         if (ac.succeeded()) {
                             idsService.handleSucceededMessage(uri, readyHandler);
                         } else {
@@ -149,14 +149,14 @@ public class UpdateController {
 
     }
 
-    public void createDataSet(String transformedDataset, String datasetExternalId, String dataSetId, String catalogueId, java.util.Map<String, Future> datasetUpdateFutures) {
+    private void createDataSet(String transformedDataset, String datasetExternalId, String dataSetId, String catalogueId, java.util.Map<String, Promise> datasetUpdatePromises) {
         piveauMessageService.createDataSet(transformedDataset, dataSetId, catalogueId, datasetReply -> {
             if (datasetReply.succeeded()) {
                 datasetManager.create(datasetExternalId, dataSetId, datasetPersistenceReply2 -> {
                     if (datasetPersistenceReply2.succeeded()) {
-                        datasetUpdateFutures.get(datasetExternalId).complete();
+                        datasetUpdatePromises.get(datasetExternalId).complete();
                     } else {
-                        datasetUpdateFutures.get(datasetExternalId).fail(datasetPersistenceReply2.cause());
+                        datasetUpdatePromises.get(datasetExternalId).fail(datasetPersistenceReply2.cause());
                     }
                 });
             } else {
@@ -165,14 +165,14 @@ public class UpdateController {
         });
     }
 
-    private void updateDataset(String datasetTTL, String messageId, String catalogueId, java.util.Map<String, Future> datasetUpdateFutures) {
+    private void updateDataset(String datasetTTL, String messageId, String catalogueId, java.util.Map<String, Promise> datasetUpdatePromises) {
         resolveDatasetIdForUpdate(messageId, reply -> {
             piveauMessageService.createDataSet(datasetTTL, reply.result(), catalogueId, datasetReply -> {
                 if (datasetReply.succeeded()) {
-                    datasetUpdateFutures.get(messageId).complete();
+                    datasetUpdatePromises.get(messageId).complete();
                 } else {
                     LOGGER.error(datasetReply.cause());
-                    datasetUpdateFutures.get(messageId).fail(datasetReply.cause());
+                    datasetUpdatePromises.get(messageId).fail(datasetReply.cause());
                 }
             });
         });
@@ -188,29 +188,29 @@ public class UpdateController {
         });
     }
 
-    private void handleDataSetFuture(AsyncResult<Void> reply, String idsId, java.util.Map<String, Future> datasetdeleteFutures) {
+    private void handleDataSetPromise(AsyncResult<Void> reply, String idsId, java.util.Map<String, Promise> datasetdeletePromises) {
         if (reply.succeeded()) {
-            datasetdeleteFutures.get(idsId).complete();
+            datasetdeletePromises.get(idsId).complete();
             LOGGER.info("DataAsset From Database successfully deleted");
         } else {
             LOGGER.error(reply.cause());
-            datasetdeleteFutures.get(idsId).fail(reply.cause());
+            datasetdeletePromises.get(idsId).fail(reply.cause());
         }
     }
 
     private void resolvePiveauIds(AsyncResult<java.util.List<String>> piveauDatasetIds, Handler<AsyncResult<java.util.Map<String, String>>> completer) {
-        java.util.Map<String, Future<JsonObject>> piveau2IDSResolveFutureMap = new HashMap<>();
+        java.util.Map<String, Promise<JsonObject>> piveau2IDSResolvePromiseMap = new HashMap<>();
         if (piveauDatasetIds.succeeded()) {
             for (String piveauId : piveauDatasetIds.result()) {
-                Future<JsonObject> idsResolve = Future.future();
-                piveau2IDSResolveFutureMap.put(piveauId, idsResolve);
-                datasetManager.findByInternalId(piveauId, idsResolve.completer());
+                Promise<JsonObject> idsResolve = Promise.promise();
+                piveau2IDSResolvePromiseMap.put(piveauId, idsResolve);
+                datasetManager.findByInternalId(piveauId, idsResolve);
             }
-            CompositeFuture.all(new ArrayList<>(piveau2IDSResolveFutureMap.values())).setHandler(ac -> {
+            CompositeFuture.all(piveau2IDSResolvePromiseMap.values().stream().map(Promise::future).collect(Collectors.toList())).setHandler(ac -> {
                 if (ac.succeeded()) {
                     java.util.Map<String, String> resultMap = new HashMap<>();
-                    for (String piveauId : piveau2IDSResolveFutureMap.keySet()) {
-                        resultMap.put(piveau2IDSResolveFutureMap.get(piveauId).result().getString("external_id"), piveauId);
+                    for (String piveauId : piveau2IDSResolvePromiseMap.keySet()) {
+                        resultMap.put(piveau2IDSResolvePromiseMap.get(piveauId).future().result().getString("external_id"), piveauId);
                     }
                     completer.handle(Future.succeededFuture(resultMap));
                 } else {
@@ -220,7 +220,6 @@ public class UpdateController {
         } else {
             completer.handle(Future.failedFuture(piveauDatasetIds.cause()));
         }
-
     }
 
     private void resolveDatasetIdForUpdate(String dataassetIdExternal, Handler<AsyncResult<String>> next) {

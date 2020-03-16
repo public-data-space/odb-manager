@@ -91,6 +91,9 @@
             </plugin>
         </plugins>
     </build>
+    <properties>
+        <vertxVersion>3.8.5</vertxVersion>
+    </properties>
     <dependencies>
         <dependency>
             <groupId>org.codehaus.mojo</groupId>
@@ -114,27 +117,27 @@
         <dependency>
             <groupId>io.vertx</groupId>
             <artifactId>vertx-auth-jwt</artifactId>
-            <version>3.6.2</version>
+            <version>${vertxVersion}</version>
         </dependency>
         <dependency>
             <groupId>io.vertx</groupId>
             <artifactId>vertx-web</artifactId>
-            <version>3.6.2</version>
+            <version>${vertxVersion}</version>
         </dependency>
         <dependency>
             <groupId>io.vertx</groupId>
             <artifactId>vertx-core</artifactId>
-            <version>3.8.5</version>
+            <version>${vertxVersion}</version>
         </dependency>
         <dependency>
             <groupId>io.vertx</groupId>
             <artifactId>vertx-circuit-breaker</artifactId>
-            <version>3.8.5</version>
+            <version>${vertxVersion}</version>
         </dependency>
         <dependency>
             <groupId>io.vertx</groupId>
             <artifactId>vertx-mysql-postgresql-client-jasync</artifactId>
-            <version>3.6.3</version>
+            <version>${vertxVersion}</version>
         </dependency>
         <dependency>
             <groupId>de.fraunhofer.iais.eis.ids.infomodel</groupId>
@@ -154,17 +157,17 @@
         <dependency>
             <groupId>io.vertx</groupId>
             <artifactId>vertx-config</artifactId>
-            <version>3.6.2</version>
+            <version>${vertxVersion}</version>
         </dependency>
         <dependency>
             <groupId>io.vertx</groupId>
             <artifactId>vertx-jdbc-client</artifactId>
-            <version>3.6.3</version>
+            <version>${vertxVersion}</version>
         </dependency>
         <dependency>
             <groupId>io.vertx</groupId>
             <artifactId>vertx-web-client</artifactId>
-            <version>3.6.3</version>
+            <version>${vertxVersion}</version>
         </dependency>
         <dependency>
             <groupId>org.mindrot</groupId>
@@ -174,12 +177,12 @@
         <dependency>
             <groupId>io.vertx</groupId>
             <artifactId>vertx-service-proxy</artifactId>
-            <version>3.6.3</version>
+            <version>${vertxVersion}</version>
         </dependency>
         <dependency>
             <groupId>io.vertx</groupId>
             <artifactId>vertx-codegen</artifactId>
-            <version>3.6.3</version>
+            <version>${vertxVersion}</version>
             <scope>provided</scope>
         </dependency>
         <dependency>

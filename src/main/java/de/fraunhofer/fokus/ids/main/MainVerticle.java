@@ -141,7 +141,7 @@ public class MainVerticle extends AbstractVerticle {
         LOGGER.info("odb-manager deployed on port " + 8080);
     }
 
-    public void getData(String input, Handler<AsyncResult<String>> readyHandler) {
+    private void getData(String input, Handler<AsyncResult<String>> readyHandler) {
         Message header = IDSMessageParser.getHeader(input);
         if (header == null) {
             try {
@@ -181,11 +181,11 @@ public class MainVerticle extends AbstractVerticle {
 
     }
 
-    public void getGraph(Handler<AsyncResult<String>> resultHandler){
+    private void getGraph(Handler<AsyncResult<String>> resultHandler){
         tsConnector.getGraph("http://fokus.fraunhofer.de/odc#DataResource1", resultHandler);
     }
 
-    public void about(Handler<AsyncResult<String>> resultHandler) {
+    private void about(Handler<AsyncResult<String>> resultHandler) {
         JsonObject jsonObject = new JsonObject();
         idsService.buildBroker(jsonObject, brokerResult -> {
             if(brokerResult.succeeded()) {

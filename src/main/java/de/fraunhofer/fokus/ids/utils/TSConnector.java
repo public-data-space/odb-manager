@@ -1,6 +1,5 @@
 package de.fraunhofer.fokus.ids.utils;
 
-import de.fraunhofer.fokus.ids.services.IDSService;
 import io.vertx.core.AsyncResult;
 import io.vertx.core.*;
 import io.vertx.core.Handler;
@@ -8,7 +7,6 @@ import io.vertx.core.buffer.Buffer;
 import io.vertx.core.eventbus.ReplyException;
 import io.vertx.core.eventbus.ReplyFailure;
 import io.vertx.core.http.HttpMethod;
-import io.vertx.core.json.Json;
 import io.vertx.core.json.JsonObject;
 import io.vertx.core.logging.Logger;
 import io.vertx.core.logging.LoggerFactory;
@@ -17,7 +15,6 @@ import io.vertx.ext.web.client.HttpResponse;
 import io.vertx.ext.web.client.WebClient;
 import io.vertx.circuitbreaker.CircuitBreaker;
 import org.apache.commons.codec.digest.DigestUtils;
-import org.apache.commons.io.IOUtils;
 import org.apache.jena.rdf.model.Model;
 import org.apache.jena.rdf.model.ModelFactory;
 import org.apache.jena.riot.Lang;
@@ -43,7 +40,6 @@ public class TSConnector {
     private String password;
     private String dataEndpoint;
     private String queryEndpoint;
-    private String updateEndpoint;
 
     private CircuitBreaker breaker;
 

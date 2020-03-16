@@ -21,7 +21,6 @@ public class InitService {
     }
 
     public void initDatabase(Handler<AsyncResult<Void>> resultHandler){
-        LOGGER.info("init");
         databaseService.update(CATALOGUE_TABLE_CREATE_QUERY, new JsonArray(), reply -> {});
         databaseService.update(DATASET_TABLE_CREATE_QUERY, new JsonArray(), reply -> {});
         resultHandler.handle(Future.succeededFuture());
