@@ -5,6 +5,7 @@ import de.fraunhofer.fokus.ids.manager.DatasetManager;
 import de.fraunhofer.fokus.ids.manager.GraphManager;
 import de.fraunhofer.fokus.ids.services.IDSService;
 import de.fraunhofer.fokus.ids.services.piveauMessageService.PiveauMessageService;
+import de.fraunhofer.fokus.ids.utils.TSConnector;
 import de.fraunhofer.iais.eis.Connector;
 import de.fraunhofer.iais.eis.RejectionReason;
 import de.fraunhofer.iais.eis.Resource;
@@ -27,12 +28,13 @@ public class UnregisterController {
     private DatasetManager datasetManager;
     private IDSService idsService;
     private PiveauMessageService piveauMessageService;
+    private TSConnector tsConnector ;
 
-    public UnregisterController(Vertx vertx, GraphManager graphManager){
+    public UnregisterController(Vertx vertx, GraphManager graphManager,TSConnector tsConnector){
         this.graphManager = graphManager;
         this.catalogueManager = new CatalogueManager(vertx);
         this.datasetManager = new DatasetManager(vertx);
-        this.idsService = new IDSService(vertx);
+        this.idsService = new IDSService(vertx,tsConnector);
         this.piveauMessageService = PiveauMessageService.createProxy(vertx, "piveauMessageService");
     }
 

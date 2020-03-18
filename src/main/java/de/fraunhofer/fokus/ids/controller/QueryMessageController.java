@@ -20,7 +20,7 @@ public class QueryMessageController {
 
     public QueryMessageController(TSConnector tsConnector, Vertx vertx){
         this.tsConnector = tsConnector;
-        this.idsService = new IDSService(vertx);
+        this.idsService = new IDSService(vertx,tsConnector);
     }
 
     public void queryMessage(String query , URI correlationMessageURI, Handler<AsyncResult<String>> resultHandler) {

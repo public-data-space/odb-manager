@@ -6,6 +6,7 @@ import de.fraunhofer.fokus.ids.manager.GraphManager;
 import de.fraunhofer.fokus.ids.services.IDSService;
 import de.fraunhofer.fokus.ids.services.piveauMessageService.PiveauMessageService;
 import de.fraunhofer.fokus.ids.services.dcatTransformerService.DCATTransformerService;
+import de.fraunhofer.fokus.ids.utils.TSConnector;
 import de.fraunhofer.iais.eis.*;
 import io.vertx.core.*;
 import io.vertx.core.json.Json;
@@ -26,12 +27,12 @@ public class RegisterController {
     private IDSService idsService;
     private PiveauMessageService piveauMessageService;
     private DCATTransformerService dcatTransformerService;
-
-    public RegisterController(Vertx vertx, GraphManager graphManager){
+    private TSConnector tsConnector;
+    public RegisterController(Vertx vertx, GraphManager graphManager,TSConnector tsConnector){
         this.graphManager = graphManager;
         this.catalogueManager = new CatalogueManager(vertx);
         this.datasetManager = new DatasetManager(vertx);
-        this.idsService = new IDSService(vertx);
+        this.idsService = new IDSService(vertx,tsConnector);
         this.piveauMessageService = PiveauMessageService.createProxy(vertx, "piveauMessageService");
         this.dcatTransformerService = DCATTransformerService.createProxy(vertx, "dcatTransformerService");
     }

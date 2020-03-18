@@ -65,9 +65,9 @@ public class MainVerticle extends AbstractVerticle {
                 this.tsConnector = TSConnector.create(webClient, breaker, config.result());
                 this.queryMessageController = new QueryMessageController(tsConnector, vertx);
                 GraphManager graphManager = new GraphManager(vertx, tsConnector);
-                this.updateController = new UpdateController(vertx, graphManager);
-                this.unregisterController = new UnregisterController(vertx, graphManager);
-                this.registerController = new RegisterController(vertx,graphManager);
+                this.updateController = new UpdateController(vertx, graphManager,tsConnector);
+                this.unregisterController = new UnregisterController(vertx, graphManager,tsConnector);
+                this.registerController = new RegisterController(vertx,graphManager,tsConnector);
 
                 deployment.compose(id1 -> {
                     Promise<String> dcatTransformer = Promise.promise();
@@ -91,7 +91,7 @@ public class MainVerticle extends AbstractVerticle {
                         if (initFuture.succeeded()) {
                             router = Router.router(vertx);
                             createHttpServer(vertx);
-                            idsService = new IDSService(vertx);
+                            idsService = new IDSService(vertx,tsConnector);
                             startPromise.complete();
                         } else {
                             startPromise.fail(initFuture.cause());
@@ -142,7 +142,8 @@ public class MainVerticle extends AbstractVerticle {
     }
 
     private void getData(String input, Handler<AsyncResult<String>> readyHandler) {
-        Message header = IDSMessageParser.getHeader(input);
+        JsonObject headerAsJson = IDSMessageParser.getHeader(input);
+        Message header = Json.decodeValue(headerAsJson.toString(),Message.class);
         if (header == null) {
             try {
                 idsService.handleRejectionMessage(RejectionReason.MALFORMED_MESSAGE, new URI(String.valueOf(RejectionReason.MALFORMED_MESSAGE)), readyHandler);
@@ -162,9 +163,9 @@ public class MainVerticle extends AbstractVerticle {
                 } else if (header instanceof ConnectorUpdateMessage) {
                     LOGGER.info("UpdateMessage received.");
                     updateController.update(uri, connector, readyHandler);
-                } else if (header instanceof SelfDescriptionRequest) {
-                    LOGGER.info("SelfDescriptionRequest received.");
-                    idsService.getSelfDescriptionResponse(uri, readyHandler);
+                } else if (header instanceof DescriptionRequestMessage) {
+                    LOGGER.info("DescriptionRequestMessage received.");
+                    idsService.getSelfDescriptionResponse(uri,headerAsJson, readyHandler);
                 }else if (header instanceof QueryMessage) {
                     LOGGER.info("QueryMessage received.");
                     String body = IDSMessageParser.getQuery(input);

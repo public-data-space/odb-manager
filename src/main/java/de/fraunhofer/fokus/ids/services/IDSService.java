@@ -1,6 +1,7 @@
 package de.fraunhofer.fokus.ids.services;
 
 import de.fraunhofer.fokus.ids.manager.CatalogueManager;
+import de.fraunhofer.fokus.ids.utils.TSConnector;
 import de.fraunhofer.iais.eis.*;
 import io.vertx.core.*;
 import io.vertx.core.buffer.Buffer;
@@ -28,15 +29,16 @@ public class IDSService {
     private CatalogueManager catalogueManager;
     private String INFO_MODEL_VERSION = "2.0.0";
     private String[] SUPPORTED_INFO_MODEL_VERSIONS = {"2.0.0"};
-
-    public IDSService(Vertx vertx) {
+    private TSConnector tsConnector ;
+    public IDSService(Vertx vertx , TSConnector tsConnector) {
         this.catalogueManager = new CatalogueManager(vertx);
+        this.tsConnector = tsConnector;
     }
 
-    private void createSucceededMessage(URI correlationMessageURI, Handler<AsyncResult<MessageProcessedNotification>> resultHandler) {
+    private void createSucceededMessage(URI correlationMessageURI, Handler<AsyncResult<MessageProcessedNotificationMessage>> resultHandler) {
         try {
             String uuid = UUID.randomUUID().toString();
-            MessageProcessedNotification message = new MessageProcessedNotificationBuilder(new URI(uuid))
+            MessageProcessedNotificationMessage message = new MessageProcessedNotificationMessageBuilder(new URI(uuid))
                     ._correlationMessage_(correlationMessageURI)
                     ._issued_(getDate())
                     ._modelVersion_("2.0.0")
@@ -92,10 +94,10 @@ public class IDSService {
         }
     }
 
-    private SelfDescriptionResponse createSelfDescriptionResponse(JsonObject jsonObject, URI correlationMessageURI) {
+    private DescriptionResponseMessage createSelfDescriptionResponse(JsonObject jsonObject, URI correlationMessageURI) {
 
         try {
-            return new SelfDescriptionResponseBuilder(new URI("broker#SelfDescriptionResponse"))
+            return new DescriptionResponseMessageBuilder(new URI("broker#SelfDescriptionResponse"))
                     ._issued_(getDate())
                     ._correlationMessage_(correlationMessageURI)
                     ._modelVersion_(INFO_MODEL_VERSION)
@@ -121,19 +123,29 @@ public class IDSService {
         return "abcdefg12";
     }
 
-    public void getSelfDescriptionResponse(URI uri, Handler<AsyncResult<String>> resultHandler) {
-        JsonObject jsonObject = new JsonObject();
-        SelfDescriptionResponse selfDescriptionResponse = createSelfDescriptionResponse(jsonObject, uri);
-        buildBroker(jsonObject, brokerResult -> {
-            if(brokerResult.succeeded()) {
-                ContentBody contentBody = new StringBody(Json.encodePrettily(selfDescriptionResponse), ContentType.create("application/json"));
-                ContentBody payload = new StringBody(Json.encodePrettily(brokerResult.result()), ContentType.create("application/json"));
-                createMultiPartMessage(uri, contentBody, payload, resultHandler);
-            } else {
-                LOGGER.error(brokerResult.cause());
-                resultHandler.handle(Future.failedFuture(brokerResult.cause()));
-            }
-        });
+    public void getSelfDescriptionResponse(URI uri,JsonObject header, Handler<AsyncResult<String>> resultHandler) {
+        DescriptionResponseMessage selfDescriptionResponse = createSelfDescriptionResponse(header, uri);
+        if (header.getString("requestedElement")!=null) {
+                tsConnector.getGraph(header.getString("requestedElement"),asyncResult->{
+                    if (asyncResult.succeeded()){
+                        createMultiPartMessage(uri, selfDescriptionResponse, new JsonObject(asyncResult.result()), resultHandler);
+                    }
+                    else {
+                        LOGGER.error(asyncResult.cause());
+                        handleRejectionMessage(RejectionReason.NOT_FOUND,uri,resultHandler);
+                    }
+                });
+        }
+        else {
+            buildBroker(header, brokerResult -> {
+                if(brokerResult.succeeded()) {
+                    createMultiPartMessage(uri, selfDescriptionResponse, brokerResult.result(), resultHandler);
+                } else {
+                    LOGGER.error(brokerResult.cause());
+                    resultHandler.handle(Future.failedFuture(brokerResult.cause()));
+                }
+            });
+        }
     }
 
     public void buildBroker(JsonObject config, Handler<AsyncResult<Broker>> next) {

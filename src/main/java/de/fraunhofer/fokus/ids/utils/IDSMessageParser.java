@@ -2,6 +2,7 @@ package de.fraunhofer.fokus.ids.utils;
 
 import de.fraunhofer.iais.eis.*;
 import io.vertx.core.json.Json;
+import io.vertx.core.json.JsonObject;
 import io.vertx.core.logging.Logger;
 import io.vertx.core.logging.LoggerFactory;
 
@@ -10,13 +11,13 @@ public class IDSMessageParser {
 
     private static final String SEPARATOR = "--IDSMSGPART";
 
-    public static Message getHeader(String input) {
+    public static JsonObject getHeader(String input) {
         try {
             int beginBody = input.indexOf(SEPARATOR, (SEPARATOR).length() + 1);
             String headerPart = input.substring(0, beginBody);
 
             String header = headerPart.substring(headerPart.indexOf("{"), headerPart.lastIndexOf("}") + 1);
-            return Json.decodeValue(header, Message.class);
+            return new JsonObject(header);
         } catch (Exception e) {
             LOGGER.error(e);
             return null;

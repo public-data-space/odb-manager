@@ -49,8 +49,11 @@ public class DCATTransformerServiceImpl implements DCATTransformerService {
                 .addProperty(DCTerms.language, model.createProperty("http://publications.europa.eu/resource/authority/language/ENG"));
 
         org.apache.jena.rdf.model.Resource publisher = model.createResource("http://ids.fokus.fraunhofer.de/publisher/"+UUID.randomUUID().toString());
-        publisher.addProperty(RDF.type, FOAF.Agent)
-                .addLiteral(FOAF.name, connector.getMaintainer().toString());
+        if (connector.getMaintainer()!=null) {
+            publisher.addProperty(RDF.type, FOAF.Agent)
+                    .addLiteral(FOAF.name, connector.getMaintainer().toString());
+        }
+
 
         catalogue.addProperty(DCTerms.publisher, publisher);
 
