@@ -3,6 +3,9 @@ package de.fraunhofer.fokus.ids.services;
 import de.fraunhofer.fokus.ids.manager.CatalogueManager;
 import de.fraunhofer.fokus.ids.utils.TSConnector;
 import de.fraunhofer.iais.eis.*;
+import io.vertx.config.ConfigRetriever;
+import io.vertx.config.ConfigRetrieverOptions;
+import io.vertx.config.ConfigStoreOptions;
 import io.vertx.core.*;
 import io.vertx.core.buffer.Buffer;
 import io.vertx.core.json.Json;
@@ -25,87 +28,115 @@ import java.nio.charset.StandardCharsets;
 import java.util.*;
 
 public class IDSService {
+    private static final String VERSION_NUMBER = "0.0.1";
     private final Logger LOGGER = LoggerFactory.getLogger(IDSService.class.getName());
     private CatalogueManager catalogueManager;
-    private String INFO_MODEL_VERSION = "2.0.0";
-    private String[] SUPPORTED_INFO_MODEL_VERSIONS = {"2.0.0"};
+    private String INFO_MODEL_VERSION = "3.0.0";
+    private String[] SUPPORTED_INFO_MODEL_VERSIONS = {"3.0.0"};
     private TSConnector tsConnector ;
+    private Vertx vertx;
+
     public IDSService(Vertx vertx , TSConnector tsConnector) {
         this.catalogueManager = new CatalogueManager(vertx);
         this.tsConnector = tsConnector;
+        this.vertx = vertx;
     }
 
     private void createSucceededMessage(URI correlationMessageURI, Handler<AsyncResult<MessageProcessedNotificationMessage>> resultHandler) {
-        try {
-            String uuid = UUID.randomUUID().toString();
-            MessageProcessedNotificationMessage message = new MessageProcessedNotificationMessageBuilder(new URI(uuid))
-                    ._correlationMessage_(correlationMessageURI)
-                    ._issued_(getDate())
-                    ._modelVersion_("2.0.0")
-                    ._issuerConnector_(new URI("URI"))
-                    ._securityToken_(new DynamicAttributeTokenBuilder()
-                            ._tokenFormat_(TokenFormat.JWT)
-                            ._tokenValue_(getJWT())
-                            .build())
-                    .build();
-            resultHandler.handle(Future.succeededFuture(message));
-        } catch (URISyntaxException e) {
-            LOGGER.error(e);
-            resultHandler.handle(Future.failedFuture(e));
-        }
+        getConfiguration( reply -> {
+            if(reply.succeeded()) {
+                try {
+                    MessageProcessedNotificationMessage message = new MessageProcessedNotificationMessageBuilder(new URI(reply.result().getString("BASE_URL")+"/MessageProcessedNotification/"+UUID.randomUUID()))
+                            ._correlationMessage_(correlationMessageURI)
+                            ._issued_(getDate())
+                            ._modelVersion_(INFO_MODEL_VERSION)
+                            ._issuerConnector_(new URI(reply.result().getString("BASE_URL")+"#Broker"))
+                            ._securityToken_(new DynamicAttributeTokenBuilder(new URI(reply.result().getString("BASE_URL")+"#DAT"))
+                                    ._tokenFormat_(TokenFormat.JWT)
+                                    ._tokenValue_(getJWT())
+                                    .build())
+                            .build();
+                    resultHandler.handle(Future.succeededFuture(message));
+                } catch (URISyntaxException e) {
+                    LOGGER.error(e);
+                    resultHandler.handle(Future.failedFuture(e));
+                }
+            } else {
+                LOGGER.error(reply.cause());
+                resultHandler.handle(Future.failedFuture(reply.cause()));
+            }
+        });
     }
 
-    public ResultMessage createResultMessage(URI correlationMessageURI){
-        try {
-            return new ResultMessageBuilder()
-                    ._correlationMessage_(correlationMessageURI)
-                    ._modelVersion_(INFO_MODEL_VERSION)
-                    ._issued_(getDate())
-                    ._issuerConnector_(new URI("URI"))
-                    ._securityToken_(new DynamicAttributeTokenBuilder()
-                            ._tokenFormat_(TokenFormat.JWT)
-                            ._tokenValue_(getJWT())
-                            .build())
-                    .build();
-        } catch (URISyntaxException e) {
-            LOGGER.error(e);
-        }
-        return null;
+    public void createResultMessage(URI correlationMessageURI, Handler<AsyncResult<ResultMessage>> resultHandler){
+        getConfiguration( reply -> {
+            if(reply.succeeded()) {
+                try {
+                    ResultMessage message =  new ResultMessageBuilder(new URI(reply.result().getString("BASE_URL")+"/ResultMessage/"+UUID.randomUUID()))
+                            ._correlationMessage_(correlationMessageURI)
+                            ._modelVersion_(INFO_MODEL_VERSION)
+                            ._issued_(getDate())
+                            ._issuerConnector_(new URI(reply.result().getString("BASE_URL")+"#Broker"))
+                            ._securityToken_(new DynamicAttributeTokenBuilder(new URI(reply.result().getString("BASE_URL")+"#DAT"))
+                                    ._tokenFormat_(TokenFormat.JWT)
+                                    ._tokenValue_(getJWT())
+                                    .build())
+                            .build();
+                    resultHandler.handle(Future.succeededFuture(message));
+                } catch (URISyntaxException e) {
+                    LOGGER.error(e);
+                    resultHandler.handle(Future.failedFuture(e));
+                }
+            } else {
+                LOGGER.error(reply.cause());
+                resultHandler.handle(Future.failedFuture(reply.cause()));
+            }
+        });
     }
 
     private void createRejectionMessage(RejectionReason rejectionReason, URI correlationMessageURI, Handler<AsyncResult<RejectionMessage>> resultHandler) {
+        getConfiguration( reply -> {
+            if(reply.succeeded()) {
+                try {
+                    RejectionMessage message = new RejectionMessageBuilder(new URI(reply.result().getString("BASE_URL")+"/RejectionMessage/"+UUID.randomUUID()))
+                            ._correlationMessage_(correlationMessageURI)
+                            ._issued_(getDate())
+                            ._modelVersion_(INFO_MODEL_VERSION)
+                            ._issuerConnector_(new URI(reply.result().getString("BASE_URL")+"#Broker"))
+                            ._securityToken_(new DynamicAttributeTokenBuilder(new URI(reply.result().getString("BASE_URL")+"#DAT"))
+                                    ._tokenFormat_(TokenFormat.JWT)
+                                    ._tokenValue_(getJWT())
+                                    .build())
+                            ._rejectionReason_(rejectionReason)
+                            .build();
+                    resultHandler.handle(Future.succeededFuture(message));
+                } catch (URISyntaxException e) {
+                    LOGGER.error(e);
+                    resultHandler.handle(Future.failedFuture(e));
+                }
+            } else {
+                LOGGER.error(reply.cause());
+                resultHandler.handle(Future.failedFuture(reply.cause()));
+            }
+        });
+    }
+
+    private Optional<DescriptionResponseMessage> createSelfDescriptionResponse( JsonObject config, URI correlationMessageURI) {
         try {
-            String uuid = UUID.randomUUID().toString();
-            RejectionMessage message = new RejectionMessageBuilder(new URI(uuid))
-                    ._correlationMessage_(correlationMessageURI)
+            return Optional.of(new DescriptionResponseMessageBuilder(new URI(config.getString("BASE_URL")+"/DescriptionResponseMessage/"+UUID.randomUUID()))
                     ._issued_(getDate())
+                    ._issuerConnector_(new URI(config.getString("BASE_URL")+"#Broker"))
+                    ._correlationMessage_(correlationMessageURI)
                     ._modelVersion_(INFO_MODEL_VERSION)
-                    ._issuerConnector_(new URI("URI"))
-                    ._securityToken_(new DynamicAttributeTokenBuilder()
+                    ._securityToken_(new DynamicAttributeTokenBuilder(new URI(config.getString("BASE_URL")+"#DAT"))
                             ._tokenFormat_(TokenFormat.JWT)
                             ._tokenValue_(getJWT())
                             .build())
-                    ._rejectionReason_(rejectionReason)
-                    .build();
-            resultHandler.handle(Future.succeededFuture(message));
-        } catch (URISyntaxException e) {
-            LOGGER.error(e);
-            resultHandler.handle(Future.failedFuture(e));
-        }
-    }
-
-    private DescriptionResponseMessage createSelfDescriptionResponse(JsonObject jsonObject, URI correlationMessageURI) {
-
-        try {
-            return new DescriptionResponseMessageBuilder(new URI("broker#SelfDescriptionResponse"))
-                    ._issued_(getDate())
-                    ._correlationMessage_(correlationMessageURI)
-                    ._modelVersion_(INFO_MODEL_VERSION)
-                    .build();
+                    .build());
         } catch (URISyntaxException e) {
             LOGGER.error(e);
         }
-        return null;
+        return Optional.empty();
     }
 
     private XMLGregorianCalendar getDate() {
@@ -123,29 +154,39 @@ public class IDSService {
         return "abcdefg12";
     }
 
-    public void getSelfDescriptionResponse(URI uri,JsonObject header, Handler<AsyncResult<String>> resultHandler) {
-        DescriptionResponseMessage selfDescriptionResponse = createSelfDescriptionResponse(header, uri);
-        if (header.getString("requestedElement")!=null) {
-                tsConnector.getGraph(header.getString("requestedElement"),asyncResult->{
-                    if (asyncResult.succeeded()){
-                        createMultiPartMessage(uri, selfDescriptionResponse, new JsonObject(asyncResult.result()), resultHandler);
+    public void getSelfDescriptionResponse(URI uri,DescriptionRequestMessage header, Handler<AsyncResult<String>> resultHandler) {
+        getConfiguration( reply -> {
+            if(reply.succeeded()) {
+                Optional<DescriptionResponseMessage> selfDescriptionResponse = createSelfDescriptionResponse(reply.result(), uri);
+                if(selfDescriptionResponse.isPresent()) {
+                    if (header.getRequestedElement() != null) {
+                        tsConnector.getGraph(header.getRequestedElement().toString(), asyncResult -> {
+                            if (asyncResult.succeeded()) {
+                                createMultiPartMessage(uri, selfDescriptionResponse.get(), new JsonObject(asyncResult.result()), resultHandler);
+                            } else {
+                                LOGGER.error(asyncResult.cause());
+                                handleRejectionMessage(RejectionReason.NOT_FOUND, uri, resultHandler);
+                            }
+                        });
+                    } else {
+                        buildBroker(reply.result(), brokerResult -> {
+                            if (brokerResult.succeeded()) {
+                                createMultiPartMessage(uri, selfDescriptionResponse.get(), brokerResult.result(), resultHandler);
+                            } else {
+                                LOGGER.error(brokerResult.cause());
+                                resultHandler.handle(Future.failedFuture(brokerResult.cause()));
+                            }
+                        });
                     }
-                    else {
-                        LOGGER.error(asyncResult.cause());
-                        handleRejectionMessage(RejectionReason.NOT_FOUND,uri,resultHandler);
-                    }
-                });
-        }
-        else {
-            buildBroker(header, brokerResult -> {
-                if(brokerResult.succeeded()) {
-                    createMultiPartMessage(uri, selfDescriptionResponse, brokerResult.result(), resultHandler);
                 } else {
-                    LOGGER.error(brokerResult.cause());
-                    resultHandler.handle(Future.failedFuture(brokerResult.cause()));
+                    LOGGER.error("SDR Optional not present.");
+                    resultHandler.handle(Future.failedFuture("SDR Optional not present."));
                 }
-            });
-        }
+            } else {
+                LOGGER.error(reply.cause());
+                resultHandler.handle(Future.failedFuture(reply.cause()));
+            }
+        });
     }
 
     public void buildBroker(JsonObject config, Handler<AsyncResult<Broker>> next) {
@@ -156,8 +197,8 @@ public class IDSService {
                     next.handle(Future.succeededFuture(brokerOptional.get()));
                 }
                 else {
-                    LOGGER.error("Optional not present.");
-                    next.handle(Future.failedFuture("Optional not present."));
+                    LOGGER.error("Broker Optional not present.");
+                    next.handle(Future.failedFuture("Broker Optional not present."));
                 }
             } else {
                 next.handle(Future.failedFuture(arrayListAsyncResult.cause()));
@@ -167,10 +208,10 @@ public class IDSService {
 
     private Optional<Broker> createBroker(JsonObject config, ArrayList<URI> connectorURIs){
         try {
-            return  Optional.of(new BrokerBuilder((new URI("payload#Broker")))
-                    ._maintainer_(new URI("maintainer"))
-                    ._version_("0.0.1")
-                    ._curator_(new URI("curator"))
+            return Optional.of(new BrokerBuilder(new URI(config.getString("BASE_URL")+"#Broker"))
+                    ._maintainer_(new URI(config.getString("MAINTAINER")))
+                    ._version_(VERSION_NUMBER)
+                    ._curator_(new URI(config.getString("CURATOR")))
                     ._connector_(connectorURIs)
                     ._outboundModelVersion_(INFO_MODEL_VERSION)
                     ._inboundModelVersion_(new ArrayList<>(Arrays.asList(SUPPORTED_INFO_MODEL_VERSIONS)))
@@ -178,7 +219,7 @@ public class IDSService {
         } catch (URISyntaxException e) {
             LOGGER.error(e);
         }
-        return Optional.empty();
+        return null;
     }
 
     private void listOfExternalIds(Handler<AsyncResult<ArrayList<URI>>> next) {
@@ -222,16 +263,14 @@ public class IDSService {
         }
     }
 
-    private Buffer createMultipartMessage(Message message, Connector connector) {
+    private Buffer createMultipartMessage(Message message) {
         ContentBody cb = new StringBody(Json.encodePrettily(message), org.apache.http.entity.ContentType.create("application/json"));
-        ContentBody result = new StringBody(Json.encodePrettily(connector), org.apache.http.entity.ContentType.create("application/json"));
 
         MultipartEntityBuilder multipartEntityBuilder = MultipartEntityBuilder.create()
                 .setBoundary("IDSMSGPART")
                 .setCharset(StandardCharsets.UTF_8)
                 .setContentType(ContentType.APPLICATION_JSON)
                 .addPart("header", cb);
-        //.addPart("payload", result);
 
         ByteArrayOutputStream out = new ByteArrayOutputStream();
         try {
@@ -246,7 +285,7 @@ public class IDSService {
     public void handleSucceededMessage(URI uri, Handler<AsyncResult<String>> readyHandler) {
         createSucceededMessage(uri, messageProcessedNotificationAsyncResult -> {
             if (messageProcessedNotificationAsyncResult.succeeded()) {
-                Buffer buffer = createMultipartMessage(messageProcessedNotificationAsyncResult.result(), null);
+                Buffer buffer = createMultipartMessage(messageProcessedNotificationAsyncResult.result());
                 readyHandler.handle(Future.succeededFuture(buffer.toString()));
             } else {
                 readyHandler.handle(Future.failedFuture(messageProcessedNotificationAsyncResult.cause()));
@@ -257,10 +296,29 @@ public class IDSService {
     public void handleRejectionMessage(RejectionReason rejectionReason, URI uri, Handler<AsyncResult<String>> readyHandler) {
         createRejectionMessage(rejectionReason, uri, rejectionMessageAsyncResult -> {
             if (rejectionMessageAsyncResult.succeeded()) {
-                Buffer buffer = createMultipartMessage(rejectionMessageAsyncResult.result(), null);
+                Buffer buffer = createMultipartMessage(rejectionMessageAsyncResult.result());
                 readyHandler.handle(Future.succeededFuture(buffer.toString()));
             } else {
                 readyHandler.handle(Future.failedFuture(rejectionMessageAsyncResult.cause()));
+            }
+        });
+    }
+
+
+    private void getConfiguration(Handler<AsyncResult<JsonObject>> resultHandler){
+
+        ConfigStoreOptions confStore = new ConfigStoreOptions()
+                .setType("env");
+
+        ConfigRetrieverOptions options = new ConfigRetrieverOptions().addStore(confStore);
+
+        ConfigRetriever retriever = ConfigRetriever.create(vertx, options);
+
+        retriever.getConfig(config -> {
+            if(config.succeeded()){
+                resultHandler.handle(Future.succeededFuture(config.result()));
+            } else {
+                resultHandler.handle(Future.failedFuture(config.cause()));
             }
         });
     }
