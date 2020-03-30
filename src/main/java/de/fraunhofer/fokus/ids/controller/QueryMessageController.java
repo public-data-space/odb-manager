@@ -3,7 +3,6 @@ package de.fraunhofer.fokus.ids.controller;
 import de.fraunhofer.fokus.ids.services.IDSService;
 import de.fraunhofer.fokus.ids.utils.TSConnector;
 import de.fraunhofer.iais.eis.RejectionReason;
-import de.fraunhofer.iais.eis.ResultMessage;
 import io.vertx.core.AsyncResult;
 import io.vertx.core.Handler;
 import io.vertx.core.Vertx;
@@ -27,8 +26,14 @@ public class QueryMessageController {
         tsConnector.query(query,"application/json",httpResponseAsyncResult -> {
             if (httpResponseAsyncResult.succeeded()) {
                 LOGGER.info("Query Message succeeded");
-                ResultMessage resultMessage = idsService.createResultMessage(correlationMessageURI);
-                idsService.createMultiPartMessage(correlationMessageURI, resultMessage, httpResponseAsyncResult.result().bodyAsJsonObject(),resultHandler);
+                idsService.createResultMessage(correlationMessageURI, reply -> {
+                if(reply.succeeded()){
+                    idsService.createMultiPartMessage(correlationMessageURI, reply.result(), httpResponseAsyncResult.result().bodyAsJsonObject(),resultHandler);
+                } else {
+                    LOGGER.error(reply.cause());
+                    idsService.handleRejectionMessage(RejectionReason.INTERNAL_RECIPIENT_ERROR,correlationMessageURI,resultHandler);
+                }
+                });
             }
             else{
                 LOGGER.error(httpResponseAsyncResult.cause());

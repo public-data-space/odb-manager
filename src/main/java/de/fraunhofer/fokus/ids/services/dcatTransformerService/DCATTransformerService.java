@@ -13,6 +13,8 @@ import io.vertx.core.Vertx;
 @VertxGen
 public interface DCATTransformerService {
 
+    String ADDRESS = "dcatTransformerService";
+
     @Fluent
     DCATTransformerService transformCatalogue(String connectorJson,String issued, Handler<AsyncResult<String>> readyHandler);
 

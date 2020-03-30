@@ -20,6 +20,8 @@ import java.util.List;
 @VertxGen
 public interface DatabaseService {
 
+    String ADDRESS = "databaseService";
+
     @Fluent
     DatabaseService query(String query, JsonArray params, Handler<AsyncResult<List<JsonObject>>> resultHandler);
 

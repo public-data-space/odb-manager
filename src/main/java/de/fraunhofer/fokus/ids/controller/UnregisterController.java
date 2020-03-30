@@ -28,14 +28,13 @@ public class UnregisterController {
     private DatasetManager datasetManager;
     private IDSService idsService;
     private PiveauMessageService piveauMessageService;
-    private TSConnector tsConnector ;
 
     public UnregisterController(Vertx vertx, GraphManager graphManager,TSConnector tsConnector){
         this.graphManager = graphManager;
         this.catalogueManager = new CatalogueManager(vertx);
         this.datasetManager = new DatasetManager(vertx);
         this.idsService = new IDSService(vertx,tsConnector);
-        this.piveauMessageService = PiveauMessageService.createProxy(vertx, "piveauMessageService");
+        this.piveauMessageService = PiveauMessageService.createProxy(vertx, PiveauMessageService.ADDRESS);
     }
 
 

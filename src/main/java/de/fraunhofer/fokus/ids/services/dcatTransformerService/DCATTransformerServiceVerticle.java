@@ -17,7 +17,7 @@ public class DCATTransformerServiceVerticle extends AbstractVerticle {
             if (ready.succeeded()) {
                 ServiceBinder binder = new ServiceBinder(vertx);
                 binder
-                        .setAddress("dcatTransformerService")
+                        .setAddress(DCATTransformerService.ADDRESS)
                         .register(DCATTransformerService.class, ready.result());
                 LOGGER.info("DCATTransformerService successfully started.");
                 startFuture.complete();

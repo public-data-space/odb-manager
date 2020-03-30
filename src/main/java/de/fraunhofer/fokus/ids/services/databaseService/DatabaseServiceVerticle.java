@@ -44,7 +44,7 @@ public class DatabaseServiceVerticle extends AbstractVerticle {
                     if (ready.succeeded()) {
                         ServiceBinder binder = new ServiceBinder(vertx);
                         binder
-                                .setAddress("databaseService")
+                                .setAddress(DatabaseService.ADDRESS)
                                 .register(DatabaseService.class, ready.result());
                         LOGGER.info("Databaseservice successfully started.");
                         startFuture.complete();

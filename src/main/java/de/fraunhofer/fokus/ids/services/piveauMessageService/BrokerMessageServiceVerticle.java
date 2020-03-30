@@ -31,7 +31,7 @@ public class BrokerMessageServiceVerticle extends AbstractVerticle {
                     if (ready.succeeded()) {
                         ServiceBinder binder = new ServiceBinder(vertx);
                         binder
-                                .setAddress("piveauMessageService")
+                                .setAddress(PiveauMessageService.ADDRESS)
                                 .register(PiveauMessageService.class, ready.result());
                         LOGGER.info("Datasourceadapterservice successfully started.");
                         startPromise.complete();

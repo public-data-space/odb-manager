@@ -27,14 +27,14 @@ public class RegisterController {
     private IDSService idsService;
     private PiveauMessageService piveauMessageService;
     private DCATTransformerService dcatTransformerService;
-    private TSConnector tsConnector;
+
     public RegisterController(Vertx vertx, GraphManager graphManager,TSConnector tsConnector){
         this.graphManager = graphManager;
         this.catalogueManager = new CatalogueManager(vertx);
         this.datasetManager = new DatasetManager(vertx);
         this.idsService = new IDSService(vertx,tsConnector);
-        this.piveauMessageService = PiveauMessageService.createProxy(vertx, "piveauMessageService");
-        this.dcatTransformerService = DCATTransformerService.createProxy(vertx, "dcatTransformerService");
+        this.piveauMessageService = PiveauMessageService.createProxy(vertx, PiveauMessageService.ADDRESS);
+        this.dcatTransformerService = DCATTransformerService.createProxy(vertx, DCATTransformerService.ADDRESS);
     }
 
 

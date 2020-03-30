@@ -14,6 +14,8 @@ import io.vertx.ext.web.client.WebClient;
 @VertxGen
 public interface PiveauMessageService {
 
+    String ADDRESS = "piveauMessageService";
+
     @Fluent
     PiveauMessageService createCatalogue(String body, String id, Handler<AsyncResult<Void>> readyHandler);
 
