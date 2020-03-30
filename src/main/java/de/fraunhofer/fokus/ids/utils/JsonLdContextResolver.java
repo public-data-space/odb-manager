@@ -18,7 +18,7 @@ public class JsonLdContextResolver {
     public JsonLdContextResolver(Vertx vertx){
         webClient =  WebClient.create(vertx);
         try {
-            SUPPORTED_CONTEXT_URL =  new URL("https://jira.iais.fraunhofer.de/stash/projects/ICTSL/repos/ids-infomodel-commons/raw/jsonld-context/2.0.0/context.jsonld");
+            SUPPORTED_CONTEXT_URL =  new URL("https://jira.iais.fraunhofer.de/stash/projects/ICTSL/repos/ids-infomodel-commons/raw/jsonld-context/3.0.0/context.jsonld");
         } catch (MalformedURLException e) {
             e.printStackTrace();
         }
