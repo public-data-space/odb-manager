@@ -2,6 +2,7 @@ package de.fraunhofer.fokus.ids.main;
 
 import de.fraunhofer.fokus.ids.controller.*;
 import de.fraunhofer.fokus.ids.manager.GraphManager;
+import de.fraunhofer.fokus.ids.models.IDSMessage;
 import de.fraunhofer.fokus.ids.services.IDSService;
 import de.fraunhofer.fokus.ids.services.piveauMessageService.BrokerMessageServiceVerticle;
 import de.fraunhofer.fokus.ids.services.databaseService.DatabaseServiceVerticle;
@@ -28,6 +29,7 @@ import io.vertx.ext.web.client.WebClient;
 import io.vertx.ext.web.handler.BodyHandler;
 import io.vertx.ext.web.handler.CorsHandler;
 import org.apache.http.entity.ContentType;
+
 import java.net.URI;
 import java.util.Arrays;
 import java.util.HashSet;
@@ -131,59 +133,61 @@ public class MainVerticle extends AbstractVerticle {
 
         router.route().handler(CorsHandler.create("*").allowedHeaders(allowedHeaders).allowedMethods(allowedMethods));
         router.route().handler(BodyHandler.create());
-
         router.post("/data").handler(routingContext -> getData(routingContext.getBodyAsString(),
                 reply -> reply(reply, routingContext.response())));
         router.route("/about").handler(routingContext -> about(reply -> reply(reply, routingContext.response())));
-        router.route("/connector").handler(routingContext -> getGraph(reply -> reply(reply, routingContext.response())));
         LOGGER.info("Starting odb manager ");
         server.requestHandler(router).listen(8092);
         LOGGER.info("odb-manager deployed on port " + 8080);
     }
 
     private void getData(String input, Handler<AsyncResult<String>> readyHandler) {
-        JsonObject headerAsJson = IDSMessageParser.getHeader(input);
-        Message header = Json.decodeValue(headerAsJson.toString(),Message.class);
-        if (header == null) {
+        IDSMessage idsMessage = IDSMessageParser.parse(input).orElse(new IDSMessage(null, null));
+
+        if (!idsMessage.getHeader().isPresent()) {
             try {
                 idsService.handleRejectionMessage(RejectionReason.MALFORMED_MESSAGE, new URI(String.valueOf(RejectionReason.MALFORMED_MESSAGE)), readyHandler);
             } catch (Exception e) {
                 e.printStackTrace();
             }
         } else {
-            URI uri = header.getId();
-            Connector connector = IDSMessageParser.getBody(input);
-            try {
-                if (header instanceof ConnectorAvailableMessage) {
-                    LOGGER.info("AvailableMessage received.");
-                    registerController.register(uri, connector, readyHandler);
-                } else if (header instanceof ConnectorUnavailableMessage) {
-                    LOGGER.info("UnavailableMessage received.");
-                    unregisterController.unregister(uri, connector, readyHandler);
-                } else if (header instanceof ConnectorUpdateMessage) {
-                    LOGGER.info("UpdateMessage received.");
-                    updateController.update(uri, connector, readyHandler);
-                } else if (header instanceof DescriptionRequestMessage) {
-                    LOGGER.info("DescriptionRequestMessage received.");
-                    idsService.getSelfDescriptionResponse(uri,headerAsJson, readyHandler);
-                }else if (header instanceof QueryMessage) {
-                    LOGGER.info("QueryMessage received.");
-                    String body = IDSMessageParser.getQuery(input);
-                    queryMessageController.queryMessage(body,uri, readyHandler);
-                }else {
-                    LOGGER.error(RejectionReason.MESSAGE_TYPE_NOT_SUPPORTED);
-                    idsService.handleRejectionMessage(RejectionReason.MESSAGE_TYPE_NOT_SUPPORTED, uri, readyHandler);
+            Message header = idsMessage.getHeader().get();
+            URI uri = idsMessage.getHeader().get().getId();
+                try {
+                    if (header instanceof DescriptionRequestMessage) {
+                        LOGGER.info("DescriptionRequestMessage received.");
+                        idsService.getSelfDescriptionResponse(uri, (DescriptionRequestMessage)header, readyHandler);
+                    } else if(idsMessage.getPayload().isPresent()) {
+                        String payload = idsMessage.getPayload().get();
+                        if (header instanceof ConnectorAvailableMessage) {
+                            LOGGER.info("AvailableMessage received.");
+                            Connector connector = Json.decodeValue(payload, Connector.class);
+                            registerController.register(uri, connector, readyHandler);
+                        } else if (header instanceof ConnectorUnavailableMessage) {
+                            LOGGER.info("UnavailableMessage received.");
+                            Connector connector = Json.decodeValue(payload, Connector.class);
+                            unregisterController.unregister(uri, connector, readyHandler);
+                        } else if (header instanceof ConnectorUpdateMessage) {
+                            LOGGER.info("UpdateMessage received.");
+                            Connector connector = Json.decodeValue(payload, Connector.class);
+                            updateController.update(uri, connector, readyHandler);
+                        } else if (header instanceof QueryMessage) {
+                            LOGGER.info("QueryMessage received.");
+                            queryMessageController.queryMessage(payload, uri, readyHandler);
+                        } else {
+                            LOGGER.error(RejectionReason.MESSAGE_TYPE_NOT_SUPPORTED);
+                            idsService.handleRejectionMessage(RejectionReason.MESSAGE_TYPE_NOT_SUPPORTED, uri, readyHandler);
+                        }
+                    } else {
+                        LOGGER.error(RejectionReason.MESSAGE_TYPE_NOT_SUPPORTED);
+                        idsService.handleRejectionMessage(RejectionReason.MESSAGE_TYPE_NOT_SUPPORTED, uri, readyHandler);
+                    }
+                } catch (Exception e) {
+                    LOGGER.error("Something went wrong while parsing the IDS message.",e);
+                    idsService.handleRejectionMessage(RejectionReason.INTERNAL_RECIPIENT_ERROR, uri, readyHandler);
                 }
-            } catch (Exception e) {
-                e.printStackTrace();
-                LOGGER.error("Something went wrong while parsing the IDS message.");
-            }
         }
 
-    }
-
-    private void getGraph(Handler<AsyncResult<String>> resultHandler){
-        tsConnector.getGraph("http://fokus.fraunhofer.de/odc#DataResource1", resultHandler);
     }
 
     private void about(Handler<AsyncResult<String>> resultHandler) {
