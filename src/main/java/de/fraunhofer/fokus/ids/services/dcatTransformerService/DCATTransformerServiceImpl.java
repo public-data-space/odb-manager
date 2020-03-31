@@ -2,6 +2,7 @@ package de.fraunhofer.fokus.ids.services.dcatTransformerService;
 
 import de.fraunhofer.fokus.ids.utils.JsonLdContextResolver;
 import de.fraunhofer.iais.eis.*;
+import de.fraunhofer.iais.eis.ids.jsonld.Serializer;
 import de.fraunhofer.iais.eis.util.PlainLiteral;
 import io.vertx.core.AsyncResult;
 import io.vertx.core.Future;
@@ -10,7 +11,6 @@ import io.vertx.core.json.Json;
 import io.vertx.core.json.JsonObject;
 import io.vertx.core.logging.Logger;
 import io.vertx.core.logging.LoggerFactory;
-import org.apache.commons.io.IOUtils;
 import org.apache.jena.rdf.model.Model;
 import org.apache.jena.rdf.model.ModelFactory;
 import org.apache.jena.rdf.model.Property;
@@ -24,13 +24,12 @@ import java.text.ParseException;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Date;
-import java.util.Map;
 import java.util.UUID;
 
 public class DCATTransformerServiceImpl implements DCATTransformerService {
     private final Logger LOGGER = LoggerFactory.getLogger(DCATTransformerServiceImpl.class.getName());
-
-    JsonLdContextResolver jsonLdContextResolver;
+    private Serializer serializer = new Serializer();
+    private JsonLdContextResolver jsonLdContextResolver;
 
     public DCATTransformerServiceImpl(JsonLdContextResolver jsonLdContextResolver, Handler<AsyncResult<DCATTransformerService>> readyHandler){
         this.jsonLdContextResolver = jsonLdContextResolver;
@@ -39,8 +38,13 @@ public class DCATTransformerServiceImpl implements DCATTransformerService {
 
     @Override
     public DCATTransformerService transformCatalogue(String connectorJson,String issued, Handler<AsyncResult<String>> readyHandler) {
-        Connector connector = Json.decodeValue(connectorJson, Connector.class);
-
+        Connector connector = null;
+        try {
+            connector = serializer.deserialize(connectorJson, Connector.class);
+        } catch(Exception e){
+            LOGGER.error(e);
+            readyHandler.handle(Future.failedFuture(e));
+        }
         Model model = setPrefixes(ModelFactory.createDefaultModel());
 
         org.apache.jena.rdf.model.Resource catalogue = model.createResource(connector.getId().toString())
@@ -73,7 +77,14 @@ public class DCATTransformerServiceImpl implements DCATTransformerService {
 
     @Override
     public DCATTransformerService transformDataset(String datasetJson, String issued, Handler<AsyncResult<String>> readyHandler) {
-        Resource dataasset = Json.decodeValue(datasetJson, Resource.class);
+        Resource dataasset = null;
+        try {
+            dataasset = serializer.deserialize(datasetJson, Resource.class);
+        } catch(Exception e){
+            LOGGER.error(e);
+            readyHandler.handle(Future.failedFuture(e));
+        }
+
         Model model = setPrefixes(ModelFactory.createDefaultModel());
 
         org.apache.jena.rdf.model.Resource dataset = model.createResource(dataasset.getId().toString())

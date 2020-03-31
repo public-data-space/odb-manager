@@ -11,12 +11,13 @@ import de.fraunhofer.iais.eis.Connector;
 import de.fraunhofer.iais.eis.RejectionReason;
 import de.fraunhofer.iais.eis.Resource;
 import de.fraunhofer.iais.eis.StaticEndpoint;
+import de.fraunhofer.iais.eis.ids.jsonld.Serializer;
 import io.vertx.core.*;
-import io.vertx.core.json.Json;
 import io.vertx.core.json.JsonObject;
 import io.vertx.core.logging.Logger;
 import io.vertx.core.logging.LoggerFactory;
 
+import java.io.IOException;
 import java.net.URI;
 import java.util.*;
 import java.util.stream.Collectors;
@@ -30,6 +31,7 @@ public class UpdateController {
     private IDSService idsService;
     private PiveauMessageService piveauMessageService;
     private DCATTransformerService dcatTransformerService;
+    private Serializer serializer = new Serializer();
 
     public UpdateController(Vertx vertx, GraphManager graphManager, TSConnector tsConnector){
         this.graphManager = graphManager;
@@ -44,12 +46,24 @@ public class UpdateController {
 
         catalogueManager.getCatalogueByExternalId(connector.getId().toString(), catalogueIdResult -> {
             if (catalogueIdResult.succeeded()) {
-                graphManager.update(connector.getId().toString(),Json.encode(connector),next1->
-                        dcatTransformerService.transformCatalogue(Json.encode(connector), null, catalogueTransformationResult -> {
-                            createCatalogueInPiveau(catalogueTransformationResult, catalogueIdResult.result().getString("internal_id"), next2 -> {
-                                updateDatasets(connector,uri, catalogueIdResult.result().getString("internal_id"), readyHandler);
-                            });
-                    }));
+                try {
+                    graphManager.update(connector.getId().toString(),serializer.serialize(connector),next1->
+                    {
+                        try {
+                            dcatTransformerService.transformCatalogue(serializer.serialize(connector), null, catalogueTransformationResult -> {
+                                createCatalogueInPiveau(catalogueTransformationResult, catalogueIdResult.result().getString("internal_id"), next2 -> {
+                                    updateDatasets(connector,uri, catalogueIdResult.result().getString("internal_id"), readyHandler);
+                                });
+                        });
+                        } catch (IOException e) {
+                            LOGGER.error(e);
+                            readyHandler.handle(Future.failedFuture(e));
+                        }
+                    });
+                } catch (IOException e) {
+                    LOGGER.error(e);
+                    readyHandler.handle(Future.failedFuture(e));
+                }
             } else {
                 LOGGER.error(catalogueIdResult.cause());
                 idsService.handleRejectionMessage(RejectionReason.INTERNAL_RECIPIENT_ERROR, uri, readyHandler);
@@ -93,11 +107,16 @@ public class UpdateController {
                     Resource dataset = connector.getCatalog().getOffer().stream().filter(r -> r.getId().toString().equals(id)).collect(Collectors.toList()).get(0);
                     id2ResourceMap.put(id, dataset);
 
-                    graphManager.create(uri.toString(),Json.encode(dataset),r->{
-                        if(r.failed()){
-                            LOGGER.info("Deletion of dataset graph failed.");
-                        }
-                    });
+                    try {
+                        graphManager.create(dataset.getId().toString(),serializer.serialize(dataset),r->{
+                            if(r.failed()){
+                                LOGGER.info("Deletion of dataset graph failed.");
+                            }
+                        });
+                    } catch (IOException e) {
+                        LOGGER.error(e);
+                        readyHandler.handle(Future.failedFuture(e));
+                    }
                     availableDatasetIds.add(id);
                 }
                 for (String datasetId : availableDatasetIds) {
@@ -110,20 +129,25 @@ public class UpdateController {
                 } else {
                     for (String messageId : messageDatasetIds) {
                         Resource dataset = id2ResourceMap.get(messageId);
-                        dcatTransformerService.transformDataset(Json.encode(dataset), ((StaticEndpoint)dataset.getResourceEndpoint().get(0)).getEndpointArtifact().getCreationDate().toString(), datasetTransformResult -> {
-                            if(datasetTransformResult.succeeded()) {
-                                if (piveauIds.contains(messageId)) {
-                                    updateDataset(datasetTransformResult.result(), messageId, catalogueId, datasetUpdatePromises);
+                        try {
+                            dcatTransformerService.transformDataset(serializer.serialize(dataset), ((StaticEndpoint)dataset.getResourceEndpoint().get(0)).getEndpointArtifact().getCreationDate().toString(), datasetTransformResult -> {
+                                if(datasetTransformResult.succeeded()) {
+                                    if (piveauIds.contains(messageId)) {
+                                        updateDataset(datasetTransformResult.result(), messageId, catalogueId, datasetUpdatePromises);
+                                    } else {
+                                        String internalId = UUID.randomUUID().toString();
+                                        createDataSet(datasetTransformResult.result(), messageId, internalId, catalogueId, datasetUpdatePromises);
+                                    }
+                                    piveauIds.remove(messageId);
                                 } else {
-                                    String internalId = UUID.randomUUID().toString();
-                                    createDataSet(datasetTransformResult.result(), messageId, internalId, catalogueId, datasetUpdatePromises);
+                                    LOGGER.error(datasetTransformResult.cause());
+                                    idsService.handleRejectionMessage(RejectionReason.INTERNAL_RECIPIENT_ERROR, uri, readyHandler);
                                 }
-                                piveauIds.remove(messageId);
-                            } else {
-                                LOGGER.error(datasetTransformResult.cause());
-                                idsService.handleRejectionMessage(RejectionReason.INTERNAL_RECIPIENT_ERROR, uri, readyHandler);
-                            }
-                        });
+                            });
+                        } catch (IOException e) {
+                            LOGGER.error(e);
+                            readyHandler.handle(Future.failedFuture(e));
+                        }
                     }
                     CompositeFuture.all(messageDatasetIds.stream().map(datasetUpdatePromises::get).map(Promise::future).collect(Collectors.toList())).setHandler(mesFutures -> {
                         if(mesFutures.succeeded()) {

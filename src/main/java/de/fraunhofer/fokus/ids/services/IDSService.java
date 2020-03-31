@@ -3,12 +3,12 @@ package de.fraunhofer.fokus.ids.services;
 import de.fraunhofer.fokus.ids.manager.CatalogueManager;
 import de.fraunhofer.fokus.ids.utils.TSConnector;
 import de.fraunhofer.iais.eis.*;
+import de.fraunhofer.iais.eis.ids.jsonld.Serializer;
 import io.vertx.config.ConfigRetriever;
 import io.vertx.config.ConfigRetrieverOptions;
 import io.vertx.config.ConfigStoreOptions;
 import io.vertx.core.*;
 import io.vertx.core.buffer.Buffer;
-import io.vertx.core.json.Json;
 import io.vertx.core.json.JsonObject;
 import io.vertx.core.logging.Logger;
 import io.vertx.core.logging.LoggerFactory;
@@ -35,6 +35,7 @@ public class IDSService {
     private String[] SUPPORTED_INFO_MODEL_VERSIONS = {"3.0.0"};
     private TSConnector tsConnector ;
     private Vertx vertx;
+    private Serializer serializer= new Serializer();
 
     public IDSService(Vertx vertx , TSConnector tsConnector) {
         this.catalogueManager = new CatalogueManager(vertx);
@@ -219,7 +220,7 @@ public class IDSService {
         } catch (URISyntaxException e) {
             LOGGER.error(e);
         }
-        return null;
+        return Optional.empty();
     }
 
     private void listOfExternalIds(Handler<AsyncResult<ArrayList<URI>>> next) {
@@ -242,19 +243,18 @@ public class IDSService {
     }
 
     public void createMultiPartMessage(URI uri, Object headerObject, Object payloadObject, Handler<AsyncResult<String>> resultHandler) {
-
-        ContentBody contentBody = new StringBody(Json.encodePrettily(headerObject), ContentType.create("application/json"));
-        ContentBody payload = new StringBody(Json.encodePrettily(payloadObject), ContentType.create("application/json"));
-
-        MultipartEntityBuilder multipartEntityBuilder = MultipartEntityBuilder.create()
-                .setBoundary("IDSMSGPART")
-                .setCharset(StandardCharsets.UTF_8)
-                .setContentType(ContentType.APPLICATION_JSON)
-                .addPart("header", contentBody)
-                .addPart("payload", payload);
-
-        ByteArrayOutputStream out = new ByteArrayOutputStream();
         try {
+            ContentBody contentBody = new StringBody(serializer.serialize(headerObject), ContentType.create("application/json"));
+            ContentBody payload = new StringBody(serializer.serialize(payloadObject), ContentType.create("application/json"));
+
+            MultipartEntityBuilder multipartEntityBuilder = MultipartEntityBuilder.create()
+                    .setBoundary("IDSMSGPART")
+                    .setCharset(StandardCharsets.UTF_8)
+                    .setContentType(ContentType.APPLICATION_JSON)
+                    .addPart("header", contentBody)
+                    .addPart("payload", payload);
+
+            ByteArrayOutputStream out = new ByteArrayOutputStream();
             multipartEntityBuilder.build().writeTo(out);
             resultHandler.handle(Future.succeededFuture(out.toString()));
         } catch (IOException e) {
@@ -264,16 +264,16 @@ public class IDSService {
     }
 
     private Buffer createMultipartMessage(Message message) {
-        ContentBody cb = new StringBody(Json.encodePrettily(message), org.apache.http.entity.ContentType.create("application/json"));
-
-        MultipartEntityBuilder multipartEntityBuilder = MultipartEntityBuilder.create()
-                .setBoundary("IDSMSGPART")
-                .setCharset(StandardCharsets.UTF_8)
-                .setContentType(ContentType.APPLICATION_JSON)
-                .addPart("header", cb);
-
-        ByteArrayOutputStream out = new ByteArrayOutputStream();
         try {
+            ContentBody cb = new StringBody(serializer.serialize(message), org.apache.http.entity.ContentType.create("application/json"));
+
+            MultipartEntityBuilder multipartEntityBuilder = MultipartEntityBuilder.create()
+                    .setBoundary("IDSMSGPART")
+                    .setCharset(StandardCharsets.UTF_8)
+                    .setContentType(ContentType.APPLICATION_JSON)
+                    .addPart("header", cb);
+
+            ByteArrayOutputStream out = new ByteArrayOutputStream();
             multipartEntityBuilder.build().writeTo(out);
             return Buffer.buffer().appendString(out.toString());
         } catch (IOException e) {

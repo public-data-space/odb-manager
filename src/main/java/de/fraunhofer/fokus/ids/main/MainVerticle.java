@@ -11,6 +11,7 @@ import de.fraunhofer.fokus.ids.utils.IDSMessageParser;
 import de.fraunhofer.fokus.ids.utils.InitService;
 import de.fraunhofer.fokus.ids.utils.TSConnector;
 import de.fraunhofer.iais.eis.*;
+import de.fraunhofer.iais.eis.ids.jsonld.Serializer;
 import io.vertx.circuitbreaker.CircuitBreaker;
 import io.vertx.circuitbreaker.CircuitBreakerOptions;
 import io.vertx.config.ConfigRetriever;
@@ -20,7 +21,6 @@ import io.vertx.core.*;
 import io.vertx.core.http.HttpMethod;
 import io.vertx.core.http.HttpServer;
 import io.vertx.core.http.HttpServerResponse;
-import io.vertx.core.json.Json;
 import io.vertx.core.json.JsonObject;
 import io.vertx.core.logging.Logger;
 import io.vertx.core.logging.LoggerFactory;
@@ -30,6 +30,7 @@ import io.vertx.ext.web.handler.BodyHandler;
 import io.vertx.ext.web.handler.CorsHandler;
 import org.apache.http.entity.ContentType;
 
+import java.io.IOException;
 import java.net.URI;
 import java.util.Arrays;
 import java.util.HashSet;
@@ -44,6 +45,8 @@ public class MainVerticle extends AbstractVerticle {
     private RegisterController registerController;
     private UpdateController updateController;
     private UnregisterController unregisterController;
+    private Serializer serializer = new Serializer();
+
     @Override
     public void start(Promise<Void> startPromise) {
         this.router = Router.router(vertx);
@@ -161,15 +164,15 @@ public class MainVerticle extends AbstractVerticle {
                         String payload = idsMessage.getPayload().get();
                         if (header instanceof ConnectorAvailableMessage) {
                             LOGGER.info("AvailableMessage received.");
-                            Connector connector = Json.decodeValue(payload, Connector.class);
+                            Connector connector = serializer.deserialize(payload, Connector.class);
                             registerController.register(uri, connector, readyHandler);
                         } else if (header instanceof ConnectorUnavailableMessage) {
                             LOGGER.info("UnavailableMessage received.");
-                            Connector connector = Json.decodeValue(payload, Connector.class);
+                            Connector connector = serializer.deserialize(payload, Connector.class);
                             unregisterController.unregister(uri, connector, readyHandler);
                         } else if (header instanceof ConnectorUpdateMessage) {
                             LOGGER.info("UpdateMessage received.");
-                            Connector connector = Json.decodeValue(payload, Connector.class);
+                            Connector connector = serializer.deserialize(payload, Connector.class);
                             updateController.update(uri, connector, readyHandler);
                         } else if (header instanceof QueryMessage) {
                             LOGGER.info("QueryMessage received.");
@@ -194,7 +197,12 @@ public class MainVerticle extends AbstractVerticle {
         JsonObject jsonObject = new JsonObject();
         idsService.buildBroker(jsonObject, brokerResult -> {
             if(brokerResult.succeeded()) {
-                resultHandler.handle(Future.succeededFuture(Json.encode(brokerResult.result())));
+                try {
+                    resultHandler.handle(Future.succeededFuture(serializer.serialize(brokerResult.result())));
+                } catch (IOException e) {
+                    LOGGER.error(e);
+                    resultHandler.handle(Future.failedFuture(e));
+                }
             } else {
                 resultHandler.handle(Future.failedFuture(brokerResult.cause()));
             }

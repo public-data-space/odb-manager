@@ -2,7 +2,7 @@ package de.fraunhofer.fokus.ids.utils;
 
 import de.fraunhofer.fokus.ids.models.IDSMessage;
 import de.fraunhofer.iais.eis.*;
-import io.vertx.core.json.Json;
+import de.fraunhofer.iais.eis.ids.jsonld.Serializer;
 import io.vertx.core.logging.Logger;
 import io.vertx.core.logging.LoggerFactory;
 import org.apache.commons.io.IOUtils;
@@ -16,6 +16,7 @@ import java.util.Optional;
 public class IDSMessageParser {
     private static Logger LOGGER = LoggerFactory.getLogger(IDSMessageParser.class.getName());
     private static final String SEPARATOR = "IDSMSGPART";
+    private static Serializer serializer = new Serializer();
 
     public static Optional<IDSMessage> parse(String requestMessage){
 
@@ -25,7 +26,7 @@ public class IDSMessageParser {
         try {
             String headerString = IOUtils.toString(multiPartInputStream.getPart("header").getInputStream(),Charset.defaultCharset());
             String payloadString = IOUtils.toString(multiPartInputStream.getPart("payload").getInputStream(),Charset.defaultCharset());
-            return Optional.of(new IDSMessage(Json.decodeValue(headerString, Message.class), payloadString));
+            return Optional.of(new IDSMessage(serializer.deserialize(headerString, Message.class), payloadString));
         } catch (IOException e) {
             LOGGER.error(e);
         }

@@ -43,7 +43,9 @@ public class CatalogueManager {
             if (catalogues.succeeded() && !catalogues.result().isEmpty()) {
                 resultHandler.handle(Future.succeededFuture(catalogues.result().get(0)));
             } else {
-                LOGGER.error(catalogues.cause());
+                if(catalogues.cause() == null) {
+                    LOGGER.error(catalogues.cause());
+                }
                 resultHandler.handle(Future.failedFuture(catalogues.cause()));
             }
         });

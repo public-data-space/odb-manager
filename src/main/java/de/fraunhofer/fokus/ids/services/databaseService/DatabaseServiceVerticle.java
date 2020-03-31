@@ -4,7 +4,7 @@ import io.vertx.config.ConfigRetriever;
 import io.vertx.config.ConfigRetrieverOptions;
 import io.vertx.config.ConfigStoreOptions;
 import io.vertx.core.AbstractVerticle;
-import io.vertx.core.Future;
+import io.vertx.core.Promise;
 import io.vertx.core.json.JsonObject;
 import io.vertx.core.logging.Logger;
 import io.vertx.core.logging.LoggerFactory;
@@ -20,7 +20,7 @@ public class DatabaseServiceVerticle extends AbstractVerticle {
     private Logger LOGGER = LoggerFactory.getLogger(DatabaseServiceVerticle.class.getName());
 
     @Override
-    public void start(Future<Void> startFuture) {
+    public void start(Promise<Void> startPromise) {
 
         ConfigStoreOptions confStore = new ConfigStoreOptions()
                 .setType("env");
@@ -47,14 +47,14 @@ public class DatabaseServiceVerticle extends AbstractVerticle {
                                 .setAddress(DatabaseService.ADDRESS)
                                 .register(DatabaseService.class, ready.result());
                         LOGGER.info("Databaseservice successfully started.");
-                        startFuture.complete();
+                        startPromise.complete();
                     } else {
                         LOGGER.error(ready.cause());
-                        startFuture.fail(ready.cause());
+                        startPromise.fail(ready.cause());
                     }
                 });
             } else {
-                startFuture.fail(ar.cause());
+                startPromise.fail(ar.cause());
                 LOGGER.error("Config could not be retrieved.");
             }
         });

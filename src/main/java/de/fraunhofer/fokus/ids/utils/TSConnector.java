@@ -128,12 +128,12 @@ public class TSConnector {
 
     public void getGraph(String graphName, Handler<AsyncResult<String>> handler) {
         HttpRequest<Buffer> request = client
-                .getAbs(uri + queryEndpoint)
+                .getAbs(uri + dataEndpoint)
                 .putHeader("Accept", "application/n-triples")
                 .addQueryParam("graph", graphName);
 
         Promise<HttpResponse<Buffer>> responsePromise = Promise.promise();
-        query(request, responsePromise);
+        send(request, HttpMethod.GET, responsePromise);
 
         responsePromise.future().setHandler(ar -> {
             if (ar.succeeded()) {

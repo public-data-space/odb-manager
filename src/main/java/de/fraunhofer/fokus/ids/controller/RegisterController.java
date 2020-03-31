@@ -8,11 +8,12 @@ import de.fraunhofer.fokus.ids.services.piveauMessageService.PiveauMessageServic
 import de.fraunhofer.fokus.ids.services.dcatTransformerService.DCATTransformerService;
 import de.fraunhofer.fokus.ids.utils.TSConnector;
 import de.fraunhofer.iais.eis.*;
+import de.fraunhofer.iais.eis.ids.jsonld.Serializer;
 import io.vertx.core.*;
-import io.vertx.core.json.Json;
 import io.vertx.core.logging.Logger;
 import io.vertx.core.logging.LoggerFactory;
 
+import java.io.IOException;
 import java.net.URI;
 import java.util.HashMap;
 import java.util.UUID;
@@ -27,6 +28,7 @@ public class RegisterController {
     private IDSService idsService;
     private PiveauMessageService piveauMessageService;
     private DCATTransformerService dcatTransformerService;
+    private Serializer serializer = new Serializer();
 
     public RegisterController(Vertx vertx, GraphManager graphManager,TSConnector tsConnector){
         this.graphManager = graphManager;
@@ -46,21 +48,30 @@ public class RegisterController {
                 idsService.handleRejectionMessage(RejectionReason.BAD_PARAMETERS, uri, readyHandler);
             }
             else {
-                graphManager.create(connector.getId().toString(),Json.encode(connector), graphCreationResult->{
-                    if (graphCreationResult.succeeded()){
-                        dcatTransformerService.transformCatalogue(Json.encode(connector), null, catalogueTTLResult -> {
-                                if(catalogueTTLResult.succeeded()){
-                                piveauMessageService.createCatalogue(catalogueTTLResult.result(), catalogueId, piveauCatalogueReply ->
-                                        createCatalogueInternal(piveauCatalogueReply, catalogueId,  connector.getId().toString(), internalCatalogueReply ->
-                                                handleDatasetCreation(internalCatalogueReply, uri, connector, catalogueId, readyHandler)));
-                                }
-                        });
-                    }
-                    else {
-                        LOGGER.error(graphCreationResult.cause());
-                        idsService.handleRejectionMessage(RejectionReason.INTERNAL_RECIPIENT_ERROR, uri, readyHandler);
-                    }
-                });
+                try {
+                    graphManager.create(connector.getId().toString(), serializer.serialize(connector), graphCreationResult -> {
+                        if (graphCreationResult.succeeded()) {
+                            try {
+                                dcatTransformerService.transformCatalogue(serializer.serialize(connector), null, catalogueTTLResult -> {
+                                    if (catalogueTTLResult.succeeded()) {
+                                        piveauMessageService.createCatalogue(catalogueTTLResult.result(), catalogueId, piveauCatalogueReply ->
+                                                createCatalogueInternal(piveauCatalogueReply, catalogueId, connector.getId().toString(), internalCatalogueReply ->
+                                                        handleDatasetCreation(internalCatalogueReply, uri, connector, catalogueId, readyHandler)));
+                                    }
+                                });
+                            } catch (IOException e) {
+                                LOGGER.error(e);
+                                readyHandler.handle(Future.failedFuture(e));
+                            }
+                        } else {
+                            LOGGER.error(graphCreationResult.cause());
+                            idsService.handleRejectionMessage(RejectionReason.INTERNAL_RECIPIENT_ERROR, uri, readyHandler);
+                        }
+                    });
+                } catch (Exception e){
+                    LOGGER.error(e);
+                    readyHandler.handle(Future.failedFuture(e));
+                }
             }
         });
 
@@ -88,23 +99,33 @@ public class RegisterController {
                         for (Resource resource : connector.getCatalog().getOffer()) {
                             StaticEndpoint staticEndpoint = (StaticEndpoint) resource.getResourceEndpoint().get(0);
                             String date = staticEndpoint.getEndpointArtifact().getCreationDate().toString();
-                            graphManager.create(resource.getId().toString(), Json.encode(resource), graphResult -> {
-                                if (graphResult.succeeded()) {
-                                    dcatTransformerService.transformDataset(Json.encode(resource), date, dataSetTransformResult -> {
-                                        if (dataSetTransformResult.succeeded()) {
-                                            dataassetCreatePromises.put(resource.getId().toString(), Promise.promise());
-                                            String datasetId = UUID.randomUUID().toString();
-                                            createDataSet(dataSetTransformResult.result(), resource.getId().toString(), datasetId, catalogueId, dataassetCreatePromises);
-                                        } else {
-                                            LOGGER.error(dataSetTransformResult.cause());
-                                            idsService.handleRejectionMessage(RejectionReason.INTERNAL_RECIPIENT_ERROR, uri, readyHandler);
+                            try {
+                                graphManager.create(resource.getId().toString(), serializer.serialize(resource), graphResult -> {
+                                    if (graphResult.succeeded()) {
+                                        try {
+                                            dcatTransformerService.transformDataset(serializer.serialize(resource), date, dataSetTransformResult -> {
+                                                if (dataSetTransformResult.succeeded()) {
+                                                    dataassetCreatePromises.put(resource.getId().toString(), Promise.promise());
+                                                    String datasetId = UUID.randomUUID().toString();
+                                                    createDataSet(dataSetTransformResult.result(), resource.getId().toString(), datasetId, catalogueId, dataassetCreatePromises);
+                                                } else {
+                                                    LOGGER.error(dataSetTransformResult.cause());
+                                                    idsService.handleRejectionMessage(RejectionReason.INTERNAL_RECIPIENT_ERROR, uri, readyHandler);
+                                                }
+                                            });
+                                        } catch (IOException e) {
+                                            LOGGER.error(e);
+                                            readyHandler.handle(Future.failedFuture(e));
                                         }
-                                    });
-                                } else {
-                                    LOGGER.error(graphResult.cause());
-                                    idsService.handleRejectionMessage(RejectionReason.INTERNAL_RECIPIENT_ERROR, uri, readyHandler);
-                                }
-                            });
+                                    } else {
+                                        LOGGER.error(graphResult.cause());
+                                        idsService.handleRejectionMessage(RejectionReason.INTERNAL_RECIPIENT_ERROR, uri, readyHandler);
+                                    }
+                                });
+                            } catch (IOException e) {
+                                LOGGER.error(e);
+                                readyHandler.handle(Future.failedFuture(e));
+                            }
                         }
                         CompositeFuture.all(dataassetCreatePromises.values().stream().map(Promise::future).collect(Collectors.toList())).setHandler(ac -> {
                             if (ac.succeeded()) {
