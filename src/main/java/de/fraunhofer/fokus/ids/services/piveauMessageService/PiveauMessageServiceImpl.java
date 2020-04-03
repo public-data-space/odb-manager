@@ -18,11 +18,11 @@ public class PiveauMessageServiceImpl implements PiveauMessageService {
     private int piveauPort;
     private String piveauAPIkey;
 
-    public PiveauMessageServiceImpl(Vertx vertx, WebClient webClient, int piveauPort, String piveauHost, String piveauAPIkey, Handler<AsyncResult<PiveauMessageService>> readyHandler) {
+    public PiveauMessageServiceImpl(Vertx vertx, WebClient webClient, JsonObject config, Handler<AsyncResult<PiveauMessageService>> readyHandler) {
         this.webClient = webClient;
-        this.piveauHost = piveauHost;
-        this.piveauPort = piveauPort;
-        this.piveauAPIkey = piveauAPIkey;
+        this.piveauHost = config.getString("host");
+        this.piveauPort = config.getInteger("port");
+        this.piveauAPIkey = config.getString("apiKey");
         this.vertx = vertx;
         readyHandler.handle(Future.succeededFuture(this));
     }

@@ -47,12 +47,12 @@ public class IDSService {
         getConfiguration( reply -> {
             if(reply.succeeded()) {
                 try {
-                    MessageProcessedNotificationMessage message = new MessageProcessedNotificationMessageBuilder(new URI(reply.result().getString("BASE_URL")+"/MessageProcessedNotification/"+UUID.randomUUID()))
+                    MessageProcessedNotificationMessage message = new MessageProcessedNotificationMessageBuilder(new URI(reply.result().getString("baseUrl")+"/MessageProcessedNotification/"+UUID.randomUUID()))
                             ._correlationMessage_(correlationMessageURI)
                             ._issued_(getDate())
                             ._modelVersion_(INFO_MODEL_VERSION)
-                            ._issuerConnector_(new URI(reply.result().getString("BASE_URL")+"#Broker"))
-                            ._securityToken_(new DynamicAttributeTokenBuilder(new URI(reply.result().getString("BASE_URL")+"#DAT"))
+                            ._issuerConnector_(new URI(reply.result().getString("baseUrl")+"#Broker"))
+                            ._securityToken_(new DynamicAttributeTokenBuilder(new URI(reply.result().getString("baseUrl")+"#DAT"))
                                     ._tokenFormat_(TokenFormat.JWT)
                                     ._tokenValue_(getJWT())
                                     .build())
@@ -73,12 +73,12 @@ public class IDSService {
         getConfiguration( reply -> {
             if(reply.succeeded()) {
                 try {
-                    ResultMessage message =  new ResultMessageBuilder(new URI(reply.result().getString("BASE_URL")+"/ResultMessage/"+UUID.randomUUID()))
+                    ResultMessage message =  new ResultMessageBuilder(new URI(reply.result().getString("baseUrl")+"/ResultMessage/"+UUID.randomUUID()))
                             ._correlationMessage_(correlationMessageURI)
                             ._modelVersion_(INFO_MODEL_VERSION)
                             ._issued_(getDate())
-                            ._issuerConnector_(new URI(reply.result().getString("BASE_URL")+"#Broker"))
-                            ._securityToken_(new DynamicAttributeTokenBuilder(new URI(reply.result().getString("BASE_URL")+"#DAT"))
+                            ._issuerConnector_(new URI(reply.result().getString("baseUrl")+"#Broker"))
+                            ._securityToken_(new DynamicAttributeTokenBuilder(new URI(reply.result().getString("baseUrl")+"#DAT"))
                                     ._tokenFormat_(TokenFormat.JWT)
                                     ._tokenValue_(getJWT())
                                     .build())
@@ -99,12 +99,12 @@ public class IDSService {
         getConfiguration( reply -> {
             if(reply.succeeded()) {
                 try {
-                    RejectionMessage message = new RejectionMessageBuilder(new URI(reply.result().getString("BASE_URL")+"/RejectionMessage/"+UUID.randomUUID()))
+                    RejectionMessage message = new RejectionMessageBuilder(new URI(reply.result().getString("baseUrl")+"/RejectionMessage/"+UUID.randomUUID()))
                             ._correlationMessage_(correlationMessageURI)
                             ._issued_(getDate())
                             ._modelVersion_(INFO_MODEL_VERSION)
-                            ._issuerConnector_(new URI(reply.result().getString("BASE_URL")+"#Broker"))
-                            ._securityToken_(new DynamicAttributeTokenBuilder(new URI(reply.result().getString("BASE_URL")+"#DAT"))
+                            ._issuerConnector_(new URI(reply.result().getString("baseUrl")+"#Broker"))
+                            ._securityToken_(new DynamicAttributeTokenBuilder(new URI(reply.result().getString("baseUrl")+"#DAT"))
                                     ._tokenFormat_(TokenFormat.JWT)
                                     ._tokenValue_(getJWT())
                                     .build())
@@ -124,12 +124,12 @@ public class IDSService {
 
     private Optional<DescriptionResponseMessage> createSelfDescriptionResponse( JsonObject config, URI correlationMessageURI) {
         try {
-            return Optional.of(new DescriptionResponseMessageBuilder(new URI(config.getString("BASE_URL")+"/DescriptionResponseMessage/"+UUID.randomUUID()))
+            return Optional.of(new DescriptionResponseMessageBuilder(new URI(config.getString("baseUrl")+"/DescriptionResponseMessage/"+UUID.randomUUID()))
                     ._issued_(getDate())
-                    ._issuerConnector_(new URI(config.getString("BASE_URL")+"#Broker"))
+                    ._issuerConnector_(new URI(config.getString("baseUrl")+"#Broker"))
                     ._correlationMessage_(correlationMessageURI)
                     ._modelVersion_(INFO_MODEL_VERSION)
-                    ._securityToken_(new DynamicAttributeTokenBuilder(new URI(config.getString("BASE_URL")+"#DAT"))
+                    ._securityToken_(new DynamicAttributeTokenBuilder(new URI(config.getString("baseUrl")+"#DAT"))
                             ._tokenFormat_(TokenFormat.JWT)
                             ._tokenValue_(getJWT())
                             .build())
@@ -209,10 +209,10 @@ public class IDSService {
 
     private Optional<Broker> createBroker(JsonObject config, ArrayList<URI> connectorURIs){
         try {
-            return Optional.of(new BrokerBuilder(new URI(config.getString("BASE_URL")+"#Broker"))
-                    ._maintainer_(new URI(config.getString("MAINTAINER")))
+            return Optional.of(new BrokerBuilder(new URI(config.getString("baseUrl")+"#Broker"))
+                    ._maintainer_(new URI(config.getString("maintainer")))
                     ._version_(VERSION_NUMBER)
-                    ._curator_(new URI(config.getString("CURATOR")))
+                    ._curator_(new URI(config.getString("curator")))
                     ._connector_(connectorURIs)
                     ._outboundModelVersion_(INFO_MODEL_VERSION)
                     ._inboundModelVersion_(new ArrayList<>(Arrays.asList(SUPPORTED_INFO_MODEL_VERSIONS)))
@@ -316,7 +316,7 @@ public class IDSService {
 
         retriever.getConfig(config -> {
             if(config.succeeded()){
-                resultHandler.handle(Future.succeededFuture(config.result()));
+                resultHandler.handle(Future.succeededFuture(config.result().getJsonObject("BROKER_CONFIG")));
             } else {
                 resultHandler.handle(Future.failedFuture(config.cause()));
             }

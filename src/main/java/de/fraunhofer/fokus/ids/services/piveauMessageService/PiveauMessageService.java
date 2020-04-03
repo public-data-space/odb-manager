@@ -31,8 +31,8 @@ public interface PiveauMessageService {
     @Fluent
     PiveauMessageService deleteCatalogue(String id, Handler<AsyncResult<Void>> readyHandler);
     @GenIgnore
-    static PiveauMessageService create(Vertx vertx, WebClient webClient, int gatewayPort, String gatewayHost, String apikey, Handler<AsyncResult<PiveauMessageService>> readyHandler) {
-        return new PiveauMessageServiceImpl(vertx, webClient, gatewayPort, gatewayHost, apikey, readyHandler);
+    static PiveauMessageService create(Vertx vertx, WebClient webClient, JsonObject config, Handler<AsyncResult<PiveauMessageService>> readyHandler) {
+        return new PiveauMessageServiceImpl(vertx, webClient, config, readyHandler);
     }
 
     @GenIgnore

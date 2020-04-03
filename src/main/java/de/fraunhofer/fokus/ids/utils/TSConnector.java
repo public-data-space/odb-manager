@@ -50,11 +50,11 @@ public class TSConnector {
     private TSConnector(WebClient client, CircuitBreaker breaker, JsonObject config) {
         this.client = client;
         this.breaker = breaker;
-        this.uri = config.getString("VIRTUOSO_ADDRESS");
-        this.username = config.getString("VIRTUOSO_USER");
-        this.password = config.getString("VIRTUOSO_PASSWORD");
-        this.dataEndpoint = config.getString("VIRTUOSO_DATAENDPOINT", "/sparql-graph-crud-auth");
-        this.queryEndpoint = config.getString("VIRTUOSO_QUERYENDPOINT", "/sparql");
+        this.uri = config.getString("address");
+        this.username = config.getString("user");
+        this.password = config.getString("password");
+        this.dataEndpoint = config.getString("dataEndpoint", "/sparql-graph-crud-auth");
+        this.queryEndpoint = config.getString("queryEndpoint", "/sparql");
     }
 
     public static Lang mimeTypeToLang(String dataMimeType) {

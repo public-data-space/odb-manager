@@ -31,13 +31,7 @@ public class DatabaseServiceVerticle extends AbstractVerticle {
 
         retriever.getConfig(ar -> {
             if (ar.succeeded()) {
-                JsonObject env = ar.result();
-                JsonObject config = new JsonObject()
-                        .put("host", env.getString("HOST"))
-                        .put("port", env.getLong("PORT"))
-                        .put("username", env.getString("USER"))
-                        .put("database", env.getString("DATABASE"))
-                        .put("password", env.getString("PASSWORD"));
+                JsonObject config = ar.result().getJsonObject("DB_CONFIG");
 
                 SQLClient jdbc = PostgreSQLClient.createShared(vertx, config);
                 DatabaseService.create(jdbc, ready -> {

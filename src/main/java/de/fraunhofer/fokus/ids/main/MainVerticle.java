@@ -4,7 +4,7 @@ import de.fraunhofer.fokus.ids.controller.*;
 import de.fraunhofer.fokus.ids.manager.GraphManager;
 import de.fraunhofer.fokus.ids.models.IDSMessage;
 import de.fraunhofer.fokus.ids.services.IDSService;
-import de.fraunhofer.fokus.ids.services.piveauMessageService.BrokerMessageServiceVerticle;
+import de.fraunhofer.fokus.ids.services.piveauMessageService.PiveauMessageServiceVerticle;
 import de.fraunhofer.fokus.ids.services.databaseService.DatabaseServiceVerticle;
 import de.fraunhofer.fokus.ids.services.dcatTransformerService.DCATTransformerServiceVerticle;
 import de.fraunhofer.fokus.ids.utils.IDSMessageParser;
@@ -45,35 +45,22 @@ public class MainVerticle extends AbstractVerticle {
     private RegisterController registerController;
     private UpdateController updateController;
     private UnregisterController unregisterController;
-    private Serializer serializer = new Serializer();
+    private Serializer serializer;
+    private int servicePort;
 
     @Override
     public void start(Promise<Void> startPromise) {
-        this.router = Router.router(vertx);
-        DeploymentOptions deploymentOptions = new DeploymentOptions();
-        deploymentOptions.setWorker(true);
-
         ConfigStoreOptions confStore = new ConfigStoreOptions()
                 .setType("env");
-
         ConfigRetrieverOptions options = new ConfigRetrieverOptions().addStore(confStore);
-
         ConfigRetriever retriever = ConfigRetriever.create(vertx, options);
-
-        Future<String> deployment = Future.succeededFuture();
 
         retriever.getConfig(config -> {
             if (config.succeeded()){
-                WebClient webClient = WebClient.create(vertx);
-                CircuitBreaker breaker = CircuitBreaker.create("virtuoso-breaker", vertx, new CircuitBreakerOptions().setMaxRetries(5))
-                        .retryPolicy(count -> count * 1000L);
-                this.tsConnector = TSConnector.create(webClient, breaker, config.result());
-                this.queryMessageController = new QueryMessageController(tsConnector, vertx);
-                GraphManager graphManager = new GraphManager(vertx, tsConnector);
-                this.updateController = new UpdateController(vertx, graphManager,tsConnector);
-                this.unregisterController = new UnregisterController(vertx, graphManager,tsConnector);
-                this.registerController = new RegisterController(vertx,graphManager,tsConnector);
 
+                DeploymentOptions deploymentOptions = new DeploymentOptions();
+                deploymentOptions.setWorker(true);
+                Future<String> deployment = Future.succeededFuture();
                 deployment.compose(id1 -> {
                     Promise<String> dcatTransformer = Promise.promise();
                     Future<String> dcatTransformerFuture = dcatTransformer.future();
@@ -82,7 +69,7 @@ public class MainVerticle extends AbstractVerticle {
                 }).compose(id2 -> {
                     Promise<String> brokerMessage = Promise.promise();
                     Future<String> brokerMessageFuture = brokerMessage.future();
-                    vertx.deployVerticle(BrokerMessageServiceVerticle.class.getName(), deploymentOptions, brokerMessageFuture);
+                    vertx.deployVerticle(PiveauMessageServiceVerticle.class.getName(), deploymentOptions, brokerMessageFuture);
                     return brokerMessageFuture;
                 }).compose(id3 -> {
                     Promise<String> databaseMessage = Promise.promise();
@@ -94,9 +81,22 @@ public class MainVerticle extends AbstractVerticle {
                         Future initFuture = Promise.promise().future();
                         new InitService(vertx).initDatabase(initFuture);
                         if (initFuture.succeeded()) {
+
+                            this.serializer = new Serializer();
+                            WebClient webClient = WebClient.create(vertx);
+                            CircuitBreaker breaker = CircuitBreaker.create("virtuoso-breaker", vertx, new CircuitBreakerOptions().setMaxRetries(5))
+                                    .retryPolicy(count -> count * 1000L);
+                            this.tsConnector = TSConnector.create(webClient, breaker, config.result().getJsonObject("VIRTUOSO_CONFIG"));
+                            this.queryMessageController = new QueryMessageController(tsConnector, vertx);
+                            GraphManager graphManager = new GraphManager(vertx, tsConnector);
+                            this.updateController = new UpdateController(vertx, graphManager,tsConnector);
+                            this.unregisterController = new UnregisterController(vertx, graphManager,tsConnector);
+                            this.registerController = new RegisterController(vertx,graphManager,tsConnector);
+                            this.servicePort = config.result().getInteger("SERVICE_PORT");
+                            this.idsService = new IDSService(vertx,tsConnector);
+
                             router = Router.router(vertx);
                             createHttpServer(vertx);
-                            idsService = new IDSService(vertx,tsConnector);
                             startPromise.complete();
                         } else {
                             startPromise.fail(initFuture.cause());
@@ -139,9 +139,9 @@ public class MainVerticle extends AbstractVerticle {
         router.post("/data").handler(routingContext -> getData(routingContext.getBodyAsString(),
                 reply -> reply(reply, routingContext.response())));
         router.route("/about").handler(routingContext -> about(reply -> reply(reply, routingContext.response())));
-        LOGGER.info("Starting odb manager ");
-        server.requestHandler(router).listen(8092);
-        LOGGER.info("odb-manager deployed on port " + 8080);
+        LOGGER.info("Starting odb-manager ");
+        server.requestHandler(router).listen(this.servicePort);
+        LOGGER.info("odb-manager deployed on port " + this.servicePort);
     }
 
     private void getData(String input, Handler<AsyncResult<String>> readyHandler) {
