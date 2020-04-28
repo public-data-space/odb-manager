@@ -28,7 +28,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.*;
 
 public class IDSService {
-    private static final String VERSION_NUMBER = "0.0.1";
+    private static final String VERSION_NUMBER = "1.0.0";
     private final Logger LOGGER = LoggerFactory.getLogger(IDSService.class.getName());
     private CatalogueManager catalogueManager;
     private String INFO_MODEL_VERSION = "3.0.0";

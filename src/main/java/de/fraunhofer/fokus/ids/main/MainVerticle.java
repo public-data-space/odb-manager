@@ -136,9 +136,12 @@ public class MainVerticle extends AbstractVerticle {
 
         router.route().handler(CorsHandler.create("*").allowedHeaders(allowedHeaders).allowedMethods(allowedMethods));
         router.route().handler(BodyHandler.create());
+        router.post("/infrastructure").handler(routingContext -> getInfrastructure(routingContext.getBodyAsString(),
+                reply -> reply(reply, routingContext.response())));
         router.post("/data").handler(routingContext -> getData(routingContext.getBodyAsString(),
                 reply -> reply(reply, routingContext.response())));
         router.route("/about").handler(routingContext -> about(reply -> reply(reply, routingContext.response())));
+        router.route("/").handler(routingContext -> about(reply -> reply(reply, routingContext.response())));
         LOGGER.info("Starting odb-manager ");
         server.requestHandler(router).listen(this.servicePort);
         LOGGER.info("odb-manager deployed on port " + this.servicePort);
@@ -157,24 +160,9 @@ public class MainVerticle extends AbstractVerticle {
             Message header = idsMessage.getHeader().get();
             URI uri = idsMessage.getHeader().get().getId();
                 try {
-                    if (header instanceof DescriptionRequestMessage) {
-                        LOGGER.info("DescriptionRequestMessage received.");
-                        idsService.getSelfDescriptionResponse(uri, (DescriptionRequestMessage)header, readyHandler);
-                    } else if(idsMessage.getPayload().isPresent()) {
+                    if(idsMessage.getPayload().isPresent()) {
                         String payload = idsMessage.getPayload().get();
-                        if (header instanceof ConnectorAvailableMessage) {
-                            LOGGER.info("AvailableMessage received.");
-                            Connector connector = serializer.deserialize(payload, Connector.class);
-                            registerController.register(uri, connector, readyHandler);
-                        } else if (header instanceof ConnectorUnavailableMessage) {
-                            LOGGER.info("UnavailableMessage received.");
-                            Connector connector = serializer.deserialize(payload, Connector.class);
-                            unregisterController.unregister(uri, connector, readyHandler);
-                        } else if (header instanceof ConnectorUpdateMessage) {
-                            LOGGER.info("UpdateMessage received.");
-                            Connector connector = serializer.deserialize(payload, Connector.class);
-                            updateController.update(uri, connector, readyHandler);
-                        } else if (header instanceof QueryMessage) {
+                        if (header instanceof QueryMessage) {
                             LOGGER.info("QueryMessage received.");
                             queryMessageController.queryMessage(payload, uri, readyHandler);
                         } else {
@@ -193,18 +181,77 @@ public class MainVerticle extends AbstractVerticle {
 
     }
 
-    private void about(Handler<AsyncResult<String>> resultHandler) {
-        JsonObject jsonObject = new JsonObject();
-        idsService.buildBroker(jsonObject, brokerResult -> {
-            if(brokerResult.succeeded()) {
-                try {
-                    resultHandler.handle(Future.succeededFuture(serializer.serialize(brokerResult.result())));
-                } catch (IOException e) {
-                    LOGGER.error(e);
-                    resultHandler.handle(Future.failedFuture(e));
+    private void getInfrastructure(String input, Handler<AsyncResult<String>> readyHandler) {
+        IDSMessage idsMessage = IDSMessageParser.parse(input).orElse(new IDSMessage(null, null));
+
+        if (!idsMessage.getHeader().isPresent()) {
+            try {
+                idsService.handleRejectionMessage(RejectionReason.MALFORMED_MESSAGE, new URI(String.valueOf(RejectionReason.MALFORMED_MESSAGE)), readyHandler);
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+        } else {
+            Message header = idsMessage.getHeader().get();
+            URI uri = idsMessage.getHeader().get().getId();
+            try {
+                if (header instanceof DescriptionRequestMessage) {
+                    LOGGER.info("DescriptionRequestMessage received.");
+                    idsService.getSelfDescriptionResponse(uri, (DescriptionRequestMessage)header, readyHandler);
+                } else if(idsMessage.getPayload().isPresent()) {
+                    String payload = idsMessage.getPayload().get();
+                    if (header instanceof ConnectorAvailableMessage) {
+                        LOGGER.info("AvailableMessage received.");
+                        Connector connector = serializer.deserialize(payload, Connector.class);
+                        registerController.register(uri, connector, readyHandler);
+                    } else if (header instanceof ConnectorUnavailableMessage) {
+                        LOGGER.info("UnavailableMessage received.");
+                        Connector connector = serializer.deserialize(payload, Connector.class);
+                        unregisterController.unregister(uri, connector, readyHandler);
+                    } else if (header instanceof ConnectorUpdateMessage) {
+                        LOGGER.info("UpdateMessage received.");
+                        Connector connector = serializer.deserialize(payload, Connector.class);
+                        updateController.update(uri, connector, readyHandler);
+                    } else {
+                        LOGGER.error(RejectionReason.MESSAGE_TYPE_NOT_SUPPORTED);
+                        idsService.handleRejectionMessage(RejectionReason.MESSAGE_TYPE_NOT_SUPPORTED, uri, readyHandler);
+                    }
+                } else {
+                    LOGGER.error(RejectionReason.MESSAGE_TYPE_NOT_SUPPORTED);
+                    idsService.handleRejectionMessage(RejectionReason.MESSAGE_TYPE_NOT_SUPPORTED, uri, readyHandler);
                 }
+            } catch (Exception e) {
+                LOGGER.error("Something went wrong while parsing the IDS message.",e);
+                idsService.handleRejectionMessage(RejectionReason.INTERNAL_RECIPIENT_ERROR, uri, readyHandler);
+            }
+        }
+
+    }
+
+
+    private void about(Handler<AsyncResult<String>> resultHandler) {
+        ConfigStoreOptions confStore = new ConfigStoreOptions()
+                .setType("env");
+
+        ConfigRetrieverOptions options = new ConfigRetrieverOptions().addStore(confStore);
+
+        ConfigRetriever retriever = ConfigRetriever.create(vertx, options);
+
+        retriever.getConfig(config -> {
+            if(config.succeeded()){
+                idsService.buildBroker(config.result().getJsonObject("BROKER_CONFIG"), brokerResult -> {
+                    if (brokerResult.succeeded()) {
+                        try {
+                            resultHandler.handle(Future.succeededFuture(serializer.serialize(brokerResult.result())));
+                        } catch (IOException e) {
+                            LOGGER.error(e);
+                            resultHandler.handle(Future.failedFuture(e));
+                        }
+                    } else {
+                        resultHandler.handle(Future.failedFuture(brokerResult.cause()));
+                    }
+                });
             } else {
-                resultHandler.handle(Future.failedFuture(brokerResult.cause()));
+                resultHandler.handle(Future.failedFuture(config.cause()));
             }
         });
     }
