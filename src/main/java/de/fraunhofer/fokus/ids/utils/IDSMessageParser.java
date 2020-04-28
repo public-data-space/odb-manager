@@ -15,7 +15,7 @@ import java.util.Optional;
 
 public class IDSMessageParser {
     private static Logger LOGGER = LoggerFactory.getLogger(IDSMessageParser.class.getName());
-    private static final String SEPARATOR = "IDSMSGPART";
+    private static final String SEPARATOR = "msgpart";
     private static Serializer serializer = new Serializer();
 
     public static Optional<IDSMessage> parse(String requestMessage){
