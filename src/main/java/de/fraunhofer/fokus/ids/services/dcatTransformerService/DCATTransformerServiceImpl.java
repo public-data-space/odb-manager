@@ -121,7 +121,7 @@ public class DCATTransformerServiceImpl implements DCATTransformerService {
 
         StaticEndpoint endpoint = (StaticEndpoint) dataasset.getResourceEndpoint().get(0);
 
-        String accessUrl = endpoint.getEndpointHost().getId() + endpoint.getPath() + endpoint.getEndpointArtifact().getFileName();
+        String accessUrl = endpoint.getEndpointHost().getAccessUrl()+endpoint.getPath()+((StaticEndpoint)endpoint).getEndpointArtifact().getFileName();
         String id = "http://example.org/"+ UUID.randomUUID().toString();
         org.apache.jena.rdf.model.Resource distribution = model.createResource(id)
                     .addProperty(RDF.type, DCAT.Distribution)
