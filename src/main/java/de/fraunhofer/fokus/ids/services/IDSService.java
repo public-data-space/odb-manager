@@ -248,7 +248,7 @@ public class IDSService {
             ContentBody payload = new StringBody(serializer.serialize(payloadObject), ContentType.create("application/json"));
 
             MultipartEntityBuilder multipartEntityBuilder = MultipartEntityBuilder.create()
-                    .setBoundary("IDSMSGPART")
+                    .setBoundary("msgpart")
                     .setCharset(StandardCharsets.UTF_8)
                     .setContentType(ContentType.APPLICATION_JSON)
                     .addPart("header", contentBody)
@@ -268,7 +268,7 @@ public class IDSService {
             ContentBody cb = new StringBody(serializer.serialize(message), org.apache.http.entity.ContentType.create("application/json"));
 
             MultipartEntityBuilder multipartEntityBuilder = MultipartEntityBuilder.create()
-                    .setBoundary("IDSMSGPART")
+                    .setBoundary("msgpart")
                     .setCharset(StandardCharsets.UTF_8)
                     .setContentType(ContentType.APPLICATION_JSON)
                     .addPart("header", cb);
