@@ -66,10 +66,14 @@ public class UnregisterController {
                             datasetManager.findByExternalId(dataasset.getId().toString(), datasetIdreply -> {
                                 if (datasetIdreply.succeeded()) {
                                     if (!datasetIdreply.result().isEmpty()) {
-                                        String datasePiveautId = datasetIdreply.result().getString("internal_id");
-                                        String datasetIdsId = datasetIdreply.result().getString("external_id");
-                                        deleteDatasetPiveau(datasePiveautId, cataloguePiveauId, externalDeleteReply ->
-                                                deleteDatasetInternal(externalDeleteReply, datasePiveautId, datasetIdsId, datasetDeletePromises));
+                                        String datasetPiveauId = datasetIdreply.result().getString("internal_id");
+                                        String datasetId = datasetIdreply.result().getString("external_id");
+                                        if(!datasetDeletePromises.keySet().contains(datasetPiveauId)) {
+                                            deleteDatasetPiveau(datasetPiveauId, cataloguePiveauId, externalDeleteReply ->
+                                                    deleteDatasetInternal(externalDeleteReply, datasetPiveauId, datasetId, datasetDeletePromises));
+                                        } else {
+                                            datasetDeleteFuture.complete();
+                                        }
                                     } else {
                                         datasetDeleteFuture.complete();
                                     }
