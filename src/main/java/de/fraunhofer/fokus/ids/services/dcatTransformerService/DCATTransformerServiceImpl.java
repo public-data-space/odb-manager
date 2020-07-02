@@ -3,11 +3,10 @@ package de.fraunhofer.fokus.ids.services.dcatTransformerService;
 import de.fraunhofer.fokus.ids.utils.JsonLdContextResolver;
 import de.fraunhofer.iais.eis.*;
 import de.fraunhofer.iais.eis.ids.jsonld.Serializer;
-import de.fraunhofer.iais.eis.util.PlainLiteral;
+import de.fraunhofer.iais.eis.util.TypedLiteral;
 import io.vertx.core.AsyncResult;
 import io.vertx.core.Future;
 import io.vertx.core.Handler;
-import io.vertx.core.json.Json;
 import io.vertx.core.json.JsonObject;
 import io.vertx.core.logging.Logger;
 import io.vertx.core.logging.LoggerFactory;
@@ -63,8 +62,8 @@ public class DCATTransformerServiceImpl implements DCATTransformerService {
 
         catalogue.addProperty(DCTerms.publisher, publisher);
 
-        addPLainLiterals(catalogue, connector.getTitle(), DCTerms.title, model);
-        addPLainLiterals(catalogue, connector.getDescription(), DCTerms.description, model);
+        addTypedLiterals(catalogue, connector.getTitle(), DCTerms.title, model);
+        addTypedLiterals(catalogue, connector.getDescription(), DCTerms.description, model);
         addDateLiterals(catalogue,issued,model);
         try(ByteArrayOutputStream baos = new ByteArrayOutputStream()){
             model.write(baos, "TTL");
@@ -93,12 +92,12 @@ public class DCATTransformerServiceImpl implements DCATTransformerService {
                 .addProperty(RDF.type, DCAT.Dataset);
 
         if (dataasset.getPublisher() != null ){
-            checkNull(dataasset.getPublisher().getId(),DCTerms.publisher,dataset);
+            checkNull(dataasset.getPublisher(),DCTerms.publisher,dataset);
         }
 
         checkNull(dataasset.getStandardLicense(),DCTerms.license,dataset);
         checkNull(dataasset.getVersion(),DCTerms.hasVersion,dataset);
-        addPLainLiterals(dataset, dataasset.getKeyword(),DCAT.keyword, model);
+        addTypedLiterals(dataset, dataasset.getKeyword(),DCAT.keyword, model);
         addDateLiterals(dataset,issued,model);
         if (dataasset.getTheme()!=null){
             for (URI uri:dataasset.getTheme()){
@@ -116,8 +115,8 @@ public class DCATTransformerServiceImpl implements DCATTransformerService {
                 dataset.addLiteral(DCTerms.language, language.toString());
             }
         }
-        addPLainLiterals(dataset, dataasset.getTitle(), DCTerms.title, model);
-        addPLainLiterals(dataset, dataasset.getDescription(), DCTerms.description, model);
+        addTypedLiterals(dataset, dataasset.getTitle(), DCTerms.title, model);
+        addTypedLiterals(dataset, dataasset.getDescription(), DCTerms.description, model);
 
         StaticEndpoint endpoint = (StaticEndpoint) dataasset.getResourceEndpoint().get(0);
 
@@ -175,9 +174,9 @@ public class DCATTransformerServiceImpl implements DCATTransformerService {
             resource.addLiteral(DCTerms.issued,model.createTypedLiteral(sdf.format(date),"xsd:dateTime"));
     }
 
-    private void addPLainLiterals(org.apache.jena.rdf.model.Resource resource, ArrayList<? extends PlainLiteral> list, Property relation, Model model){
+    private void addTypedLiterals(org.apache.jena.rdf.model.Resource resource, ArrayList<? extends TypedLiteral> list, Property relation, Model model){
         if(list != null) {
-            for (PlainLiteral literal : list) {
+            for (TypedLiteral literal : list) {
                 resource.addLiteral(relation,model.createLiteral(literal.getValue(), "en"));
             }
         }
