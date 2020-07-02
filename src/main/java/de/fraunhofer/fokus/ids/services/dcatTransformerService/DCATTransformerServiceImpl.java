@@ -126,6 +126,9 @@ public class DCATTransformerServiceImpl implements DCATTransformerService {
                     .addProperty(RDF.type, DCAT.Distribution)
                     .addProperty(DCAT.accessURL, accessUrl)
                     .addProperty(DCTerms.title,"Distribution-"+endpoint.getEndpointArtifact().getFileName());
+        if(dataasset.getCustomLicense() != null){
+            distribution.addProperty(DCTerms.license, dataasset.getCustomLicense().toString());
+        }
 
         dataset.addProperty(DCAT.distribution, distribution);
 
@@ -177,7 +180,7 @@ public class DCATTransformerServiceImpl implements DCATTransformerService {
     private void addTypedLiterals(org.apache.jena.rdf.model.Resource resource, ArrayList<? extends TypedLiteral> list, Property relation, Model model){
         if(list != null) {
             for (TypedLiteral literal : list) {
-                resource.addLiteral(relation,model.createLiteral(literal.getValue(), "en"));
+                resource.addLiteral(relation,model.createLiteral(literal.getValue(), literal.getLanguage()));
             }
         }
     }
