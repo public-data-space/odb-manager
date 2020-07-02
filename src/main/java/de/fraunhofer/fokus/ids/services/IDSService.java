@@ -31,8 +31,8 @@ public class IDSService {
     private static final String VERSION_NUMBER = "1.0.0";
     private final Logger LOGGER = LoggerFactory.getLogger(IDSService.class.getName());
     private CatalogueManager catalogueManager;
-    private String INFO_MODEL_VERSION = "3.0.0";
-    private String[] SUPPORTED_INFO_MODEL_VERSIONS = {"3.0.0"};
+    private String INFO_MODEL_VERSION = "3.1.0";
+    private String[] SUPPORTED_INFO_MODEL_VERSIONS = {"3.1.0"};
     private TSConnector tsConnector ;
     private Vertx vertx;
     private Serializer serializer= new Serializer();
