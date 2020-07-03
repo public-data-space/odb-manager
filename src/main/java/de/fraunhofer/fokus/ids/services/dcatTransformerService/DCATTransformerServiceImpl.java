@@ -180,7 +180,11 @@ public class DCATTransformerServiceImpl implements DCATTransformerService {
     private void addTypedLiterals(org.apache.jena.rdf.model.Resource resource, ArrayList<? extends TypedLiteral> list, Property relation, Model model){
         if(list != null) {
             for (TypedLiteral literal : list) {
-                resource.addLiteral(relation,model.createLiteral(literal.getValue(), literal.getLanguage()));
+                String lang = "en";
+                if(literal.getLanguage()!=null){
+                    lang = literal.getLanguage();
+                }
+                resource.addLiteral(relation,model.createLiteral(literal.getValue(), lang));
             }
         }
     }
