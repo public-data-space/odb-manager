@@ -39,7 +39,29 @@ public class RegisterController {
         this.dcatTransformerService = DCATTransformerService.createProxy(vertx, DCATTransformerService.ADDRESS);
     }
 
-
+    public void registerResourceAvailableMessage(URI uri, String issuerConnector, Resource resource, Handler<AsyncResult<String>> readyHandle) {
+        catalogueManager.getCatalogueByExternalId(issuerConnector, next -> {
+            if (next.succeeded()) {
+                String cataloguePiveauId = next.result().getString("internal_id");
+                LOGGER.info("Katalog with id " + cataloguePiveauId + " found ");
+                if (resource != null) {
+                    datasetManager.findByExternalId(resource.getId().toString(), datasetIdreply -> {
+                        if (datasetIdreply.succeeded()) {
+                            LOGGER.info("Dataset " + resource.getId().toString() + " is already registered in the internal database. Rejecting ResrouceAvailableMessage.");
+                            idsService.handleRejectionMessage(RejectionReason.BAD_PARAMETERS, uri, readyHandle);
+                        } else {
+                            java.util.Map<String, Promise> dataassetCreatePromises = new HashMap<>();
+                            saveDatasetInDatabase(uri,cataloguePiveauId,resource,dataassetCreatePromises,readyHandle);
+                            composeAllPromises(uri,readyHandle,dataassetCreatePromises);
+                        }
+                    });
+                }
+            } else {
+                LOGGER.info("Katalog with id " + issuerConnector + " not found ");
+                idsService.handleRejectionMessage(RejectionReason.BAD_PARAMETERS, uri, readyHandle);
+            }
+        });
+    }
     public void register(URI uri, Connector connector, Handler<AsyncResult<String>> readyHandler) {
         String catalogueId = UUID.randomUUID().toString();
         catalogueManager.getCatalogueByExternalId(connector.getId().toString(),next->{
@@ -91,50 +113,57 @@ public class RegisterController {
             next.handle(Future.failedFuture(reply.cause()));
         }
     }
+    private void saveDatasetInDatabase(URI uri, String catalogueId, Resource resource, java.util.Map<String, Promise> dataassetCreatePromises, Handler<AsyncResult<String>> readyHandler) {
+        StaticEndpoint staticEndpoint = (StaticEndpoint) resource.getResourceEndpoint().get(0);
+        String date = staticEndpoint.getEndpointArtifact().getCreationDate().toString();
+        try {
+            graphManager.create(resource.getId().toString(), serializer.serialize(resource), graphResult -> {
+                if (graphResult.succeeded()) {
+                    try {
+                        dcatTransformerService.transformDataset(serializer.serialize(resource), date, dataSetTransformResult -> {
+                            if (dataSetTransformResult.succeeded()) {
+                                dataassetCreatePromises.put(resource.getId().toString(), Promise.promise());
+                                String datasetId = UUID.randomUUID().toString();
+                                createDataSet(dataSetTransformResult.result(), resource.getId().toString(), datasetId, catalogueId, dataassetCreatePromises);
+                            } else {
+                                LOGGER.error(dataSetTransformResult.cause());
+                                idsService.handleRejectionMessage(RejectionReason.INTERNAL_RECIPIENT_ERROR, uri, readyHandler);
+                            }
+                        });
+                    } catch (IOException e) {
+                        LOGGER.error(e);
+                        readyHandler.handle(Future.failedFuture(e));
+                    }
+                } else {
+                    LOGGER.error(graphResult.cause());
+                    idsService.handleRejectionMessage(RejectionReason.INTERNAL_RECIPIENT_ERROR, uri, readyHandler);
+                }
+            });
+        } catch (IOException e) {
+            LOGGER.error(e);
+            readyHandler.handle(Future.failedFuture(e));
+        }
+    }
+
+    private void composeAllPromises(URI uri, Handler<AsyncResult<String>> readyHandler, java.util.Map<String, Promise> dataassetCreatePromises) {
+        CompositeFuture.all(dataassetCreatePromises.values().stream().map(Promise::future).collect(Collectors.toList())).setHandler(ac -> {
+            if (ac.succeeded()) {
+                idsService.handleSucceededMessage(uri, readyHandler);
+            } else {
+                LOGGER.error(ac.cause());
+                idsService.handleRejectionMessage(RejectionReason.INTERNAL_RECIPIENT_ERROR, uri, readyHandler);
+            }
+        });
+    }
 
     private void handleDatasetCreation( AsyncResult<Void> internalCatalogueCreationReply, URI uri, Connector connector, String catalogueId, Handler<AsyncResult<String>> readyHandler) {
         if (internalCatalogueCreationReply.succeeded()) {
                     java.util.Map<String, Promise> dataassetCreatePromises = new HashMap<>();
                     if (connector.getCatalog() != null) {
                         for (Resource resource : connector.getCatalog().getOffer()) {
-                            StaticEndpoint staticEndpoint = (StaticEndpoint) resource.getResourceEndpoint().get(0);
-                            String date = staticEndpoint.getEndpointArtifact().getCreationDate().toString();
-                            try {
-                                graphManager.create(resource.getId().toString(), serializer.serialize(resource), graphResult -> {
-                                    if (graphResult.succeeded()) {
-                                        try {
-                                            dcatTransformerService.transformDataset(serializer.serialize(resource), date, dataSetTransformResult -> {
-                                                if (dataSetTransformResult.succeeded()) {
-                                                    dataassetCreatePromises.put(resource.getId().toString(), Promise.promise());
-                                                    String datasetId = UUID.randomUUID().toString();
-                                                    createDataSet(dataSetTransformResult.result(), resource.getId().toString(), datasetId, catalogueId, dataassetCreatePromises);
-                                                } else {
-                                                    LOGGER.error(dataSetTransformResult.cause());
-                                                    idsService.handleRejectionMessage(RejectionReason.INTERNAL_RECIPIENT_ERROR, uri, readyHandler);
-                                                }
-                                            });
-                                        } catch (IOException e) {
-                                            LOGGER.error(e);
-                                            readyHandler.handle(Future.failedFuture(e));
-                                        }
-                                    } else {
-                                        LOGGER.error(graphResult.cause());
-                                        idsService.handleRejectionMessage(RejectionReason.INTERNAL_RECIPIENT_ERROR, uri, readyHandler);
-                                    }
-                                });
-                            } catch (IOException e) {
-                                LOGGER.error(e);
-                                readyHandler.handle(Future.failedFuture(e));
-                            }
+                            saveDatasetInDatabase(uri,catalogueId,resource,dataassetCreatePromises,readyHandler);
                         }
-                        CompositeFuture.all(dataassetCreatePromises.values().stream().map(Promise::future).collect(Collectors.toList())).setHandler(ac -> {
-                            if (ac.succeeded()) {
-                                idsService.handleSucceededMessage(uri, readyHandler);
-                            } else {
-                                LOGGER.error(ac.cause());
-                                idsService.handleRejectionMessage(RejectionReason.INTERNAL_RECIPIENT_ERROR, uri, readyHandler);
-                            }
-                        });
+                        composeAllPromises(uri,readyHandler,dataassetCreatePromises);
                     }
         } else {
             idsService.handleRejectionMessage(RejectionReason.INTERNAL_RECIPIENT_ERROR, uri, readyHandler);
