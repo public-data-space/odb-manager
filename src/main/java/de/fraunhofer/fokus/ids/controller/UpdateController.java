@@ -7,10 +7,7 @@ import de.fraunhofer.fokus.ids.services.IDSService;
 import de.fraunhofer.fokus.ids.services.piveauMessageService.PiveauMessageService;
 import de.fraunhofer.fokus.ids.services.dcatTransformerService.DCATTransformerService;
 import de.fraunhofer.fokus.ids.utils.TSConnector;
-import de.fraunhofer.iais.eis.Connector;
-import de.fraunhofer.iais.eis.RejectionReason;
-import de.fraunhofer.iais.eis.Resource;
-import de.fraunhofer.iais.eis.StaticEndpoint;
+import de.fraunhofer.iais.eis.*;
 import de.fraunhofer.iais.eis.ids.jsonld.Serializer;
 import io.vertx.core.*;
 import io.vertx.core.json.JsonObject;
@@ -20,6 +17,9 @@ import io.vertx.core.logging.LoggerFactory;
 import java.io.IOException;
 import java.net.URI;
 import java.util.*;
+import java.util.Collection;
+import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 public class UpdateController {
@@ -40,6 +40,83 @@ public class UpdateController {
         this.idsService = new IDSService(vertx,tsConnector);
         this.piveauMessageService = PiveauMessageService.createProxy(vertx, PiveauMessageService.ADDRESS);
         this.dcatTransformerService = DCATTransformerService.createProxy(vertx, DCATTransformerService.ADDRESS);
+    }
+    public void updateSingleDataset(URI uri, String issuerConnector, Resource resource, Handler<AsyncResult<String>> readyHandle) {
+        catalogueManager.getCatalogueByExternalId(issuerConnector, next -> {
+            if (next.succeeded()) {
+                String cataloguePiveauId = next.result().getString("internal_id");
+                LOGGER.info("Katalog with id " + issuerConnector + " found ");
+
+                if (resource != null) {
+                    datasetManager.dataAssetIdsOfCatalogue(cataloguePiveauId, piveauDatasetIds -> {
+                        if (piveauDatasetIds.succeeded()) {
+                            try {
+                                dcatTransformerService.transformDataset(serializer.serialize(resource), ((StaticEndpoint) resource.getResourceEndpoint().get(0)).getEndpointArtifact().getCreationDate().toString(), datasetTransformResult -> {
+                                    if (datasetTransformResult.succeeded()) {
+                                        if (!piveauDatasetIds.result().isEmpty()) {
+                                            datasetManager.findByExternalId(resource.getId().toString(), datasetIdreply -> {
+                                                if (datasetIdreply.succeeded()) {
+                                                    String datasePiveautId = datasetIdreply.result().getString("internal_id");
+                                                    if (piveauDatasetIds.result().contains(datasePiveautId)) {
+                                                        graphManager.delete(resource.getId().toString(), r -> {
+                                                            if (r.failed()) {
+                                                                LOGGER.info("Deletion of dataset graph failed.");
+                                                            }
+                                                        });
+                                                        datasetGraphCreation(resource,readyHandle);
+                                                        resolveDatasetIdForUpdate(resource.getId().toString(), reply -> {
+                                                            piveauMessageService.createDataSet(datasetTransformResult.result(), reply.result(), cataloguePiveauId, datasetReply -> {
+                                                                if (datasetReply.succeeded()) {
+                                                                    idsService.handleSucceededMessage(uri, readyHandle);
+                                                                } else {
+                                                                    LOGGER.error(datasetReply.cause());
+                                                                    idsService.handleRejectionMessage(RejectionReason.BAD_PARAMETERS, uri, readyHandle);
+                                                                }
+                                                            });
+                                                        });
+                                                    } else {
+                                                        idsService.handleRejectionMessage(RejectionReason.BAD_PARAMETERS, uri, readyHandle);
+                                                    }
+                                                } else {
+                                                    LOGGER.info("Dataset with id " + resource.getId().toString() + " not found ");
+                                                    idsService.handleRejectionMessage(RejectionReason.BAD_PARAMETERS, uri, readyHandle);
+                                                }
+                                            });
+                                        } else {
+                                            String internalId = UUID.randomUUID().toString();
+                                            datasetGraphCreation(resource,readyHandle);
+                                            piveauMessageService.createDataSet(datasetTransformResult.result(), internalId, cataloguePiveauId, datasetReply -> {
+                                                if (datasetReply.succeeded()) {
+                                                    datasetManager.create(resource.getId().toString(), internalId, datasetPersistenceReply2 -> {
+                                                        if (datasetPersistenceReply2.succeeded()) {
+                                                            idsService.handleSucceededMessage(uri, readyHandle);
+                                                        } else {
+                                                            idsService.handleRejectionMessage(RejectionReason.INTERNAL_RECIPIENT_ERROR, uri, readyHandle);
+                                                        }
+                                                    });
+                                                } else {
+                                                    LOGGER.error(datasetReply.cause());
+                                                }
+                                            });
+                                        }
+                                    } else {
+                                        LOGGER.error(datasetTransformResult.cause());
+                                        idsService.handleRejectionMessage(RejectionReason.INTERNAL_RECIPIENT_ERROR, uri, readyHandle);
+                                    }
+                                });
+                            } catch (IOException e) {
+                                readyHandle.handle(Future.failedFuture(e));
+                            }
+                        } else {
+                            idsService.handleRejectionMessage(RejectionReason.INTERNAL_RECIPIENT_ERROR, uri, readyHandle);
+                        }
+                    });
+                }
+            } else {
+                LOGGER.info("Katalog with id " + issuerConnector + " not found ");
+                idsService.handleRejectionMessage(RejectionReason.BAD_PARAMETERS, uri, readyHandle);
+            }
+        });
     }
 
     public void update(URI uri, Connector connector, Handler<AsyncResult<String>> readyHandler) {
@@ -85,7 +162,18 @@ public class UpdateController {
             next.handle(Future.failedFuture(catalogue.cause()));
         }
     }
-
+    private void datasetGraphCreation(Resource resource,  Handler<AsyncResult<String>> readyHandler){
+        try {
+            graphManager.create(resource.getId().toString(),serializer.serialize(resource),r->{
+                if(r.failed()){
+                    LOGGER.info("Creation of dataset graph failed.");
+                }
+            });
+        } catch (IOException e) {
+            LOGGER.error(e);
+            readyHandler.handle(Future.failedFuture(e));
+        }
+    }
     private void updateDatasets(Connector connector, URI uri, String catalogueId, Handler<AsyncResult<String>> readyHandler) {
         datasetManager.dataAssetIdsOfCatalogue(catalogueId, piveauDatasetIds ->
                 resolvePiveauIds(piveauDatasetIds, result -> {
@@ -106,17 +194,7 @@ public class UpdateController {
                 for(String id : messageDatasetIds){
                     Resource dataset = connector.getCatalog().getOffer().stream().filter(r -> r.getId().toString().equals(id)).collect(Collectors.toList()).get(0);
                     id2ResourceMap.put(id, dataset);
-
-                    try {
-                        graphManager.create(dataset.getId().toString(),serializer.serialize(dataset),r->{
-                            if(r.failed()){
-                                LOGGER.info("Deletion of dataset graph failed.");
-                            }
-                        });
-                    } catch (IOException e) {
-                        LOGGER.error(e);
-                        readyHandler.handle(Future.failedFuture(e));
-                    }
+                    datasetGraphCreation(dataset,readyHandler);
                     availableDatasetIds.add(id);
                 }
                 for (String datasetId : availableDatasetIds) {

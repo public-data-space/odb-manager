@@ -231,8 +231,25 @@ public class MainVerticle extends AbstractVerticle {
                                 idsService.handleRejectionMessage(RejectionReason.MESSAGE_TYPE_NOT_SUPPORTED, uri, readyHandler);
                             }
                         } else {
-                            LOGGER.error(RejectionReason.MESSAGE_TYPE_NOT_SUPPORTED);
-                            idsService.handleRejectionMessage(RejectionReason.MESSAGE_TYPE_NOT_SUPPORTED, uri, readyHandler);
+                            if (header instanceof ResourceAvailableMessage) {
+                                LOGGER.info("ResourceUnavailableMessage received.");
+                                String issuerConnector = header.getIssuerConnector().toString();
+                                Resource resource = ((ResourceAvailableMessage) header).getAffectedResource();
+                                registerController.registerResourceAvailableMessage(uri, issuerConnector, resource, readyHandler);
+                            } else if (header instanceof ResourceUnavailableMessage) {
+                                LOGGER.info("ResourceAvailableMessage received.");
+                                String issuerConnector = header.getIssuerConnector().toString();
+                                Resource resource = ((ResourceUnavailableMessage) header).getAffectedResource();
+                                unregisterController.unregisterSingleDataset(uri, issuerConnector, resource, readyHandler);
+                            } else if (header instanceof ResourceUpdateMessage) {
+                                LOGGER.info("ResourceUpdateMessage received.");
+                                String issuerConnector = header.getIssuerConnector().toString();
+                                Resource resource = ((ResourceUpdateMessage) header).getAffectedResource();
+                                updateController.updateSingleDataset(uri, issuerConnector, resource, readyHandler);
+                            } else {
+                                LOGGER.error(RejectionReason.MESSAGE_TYPE_NOT_SUPPORTED);
+                                idsService.handleRejectionMessage(RejectionReason.MESSAGE_TYPE_NOT_SUPPORTED, uri, readyHandler);
+                            }
                         }
                     } catch (Exception e) {
                         LOGGER.error("Something went wrong while parsing the IDS message.",e);

@@ -37,6 +37,63 @@ public class UnregisterController {
         this.piveauMessageService = PiveauMessageService.createProxy(vertx, PiveauMessageService.ADDRESS);
     }
 
+    public void unregisterSingleDataset(URI uri, String issuerConnector, Resource resource, Handler<AsyncResult<String>> readyHandler) {
+        catalogueManager.getCatalogueByExternalId(issuerConnector, next -> {
+            if (next.succeeded()) {
+                String cataloguePiveauId = next.result().getString("internal_id");
+                LOGGER.info("Katalog with id " + issuerConnector + " found ");
+                if (resource != null) {
+                    datasetManager.dataAssetIdsOfCatalogue(cataloguePiveauId, piveauDatasetIds -> {
+                        if (piveauDatasetIds.succeeded()) {
+                            if (!piveauDatasetIds.result().isEmpty()) {
+                                datasetManager.findByExternalId(resource.getId().toString(), datasetIdreply -> {
+                                    if (datasetIdreply.succeeded()) {
+                                        if (!datasetIdreply.result().isEmpty()) {
+                                            String datasePiveautId = datasetIdreply.result().getString("internal_id");
+                                            if (piveauDatasetIds.result().contains(datasePiveautId)) {
+                                                String datasetIdsId = datasetIdreply.result().getString("external_id");
+                                                graphManager.delete(datasetIdsId, reply -> {});
+                                                deleteDatasetPiveau(datasePiveautId, cataloguePiveauId, externalDeleteReply -> {
+                                                    if (externalDeleteReply.succeeded()) {
+                                                        datasetManager.deleteByInternalId(datasePiveautId, internalDatasetDeleteResult -> {
+                                                            if (internalDatasetDeleteResult.succeeded()) {
+                                                                LOGGER.info("DataAsset From Database successfully deleted");
+                                                                idsService.handleSucceededMessage(uri, readyHandler);
+                                                            } else {
+                                                                idsService.handleRejectionMessage(RejectionReason.INTERNAL_RECIPIENT_ERROR, uri, readyHandler);
+                                                                LOGGER.error(internalDatasetDeleteResult.cause());
+                                                            }
+                                                        });
+                                                    }
+                                                });
+                                            } else {
+                                                idsService.handleRejectionMessage(RejectionReason.INTERNAL_RECIPIENT_ERROR, uri, readyHandler);
+                                            }
+                                        } else {
+                                            idsService.handleRejectionMessage(RejectionReason.BAD_PARAMETERS, uri, readyHandler);
+                                        }
+                                    } else {
+                                        LOGGER.error(datasetIdreply.cause());
+                                        idsService.handleRejectionMessage(RejectionReason.INTERNAL_RECIPIENT_ERROR, uri, readyHandler);
+                                    }
+                                });
+                            } else {
+                                LOGGER.error(piveauDatasetIds.cause());
+                                idsService.handleRejectionMessage(RejectionReason.INTERNAL_RECIPIENT_ERROR, uri, readyHandler);
+                            }
+                        } else {
+                            LOGGER.error(piveauDatasetIds.cause());
+                            idsService.handleRejectionMessage(RejectionReason.NOT_FOUND, uri, readyHandler);
+                        }
+                    });
+                }
+            } else {
+                LOGGER.info("Katalog with id " + issuerConnector + " not found ");
+                idsService.handleRejectionMessage(RejectionReason.BAD_PARAMETERS, uri, readyHandler);
+            }
+        });
+    }
+
 
     public void unregister(URI uri, Connector connector, Handler<AsyncResult<String>> readyHandler) {
         java.util.Map<String, Promise> datasetDeletePromises = new HashMap<>();
