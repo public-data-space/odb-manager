@@ -13,6 +13,7 @@ import io.vertx.core.*;
 import io.vertx.core.json.JsonObject;
 import io.vertx.core.logging.Logger;
 import io.vertx.core.logging.LoggerFactory;
+import org.apache.http.HttpEntity;
 
 import java.net.URI;
 import java.util.ArrayList;
@@ -37,7 +38,7 @@ public class UnregisterController {
         this.piveauMessageService = PiveauMessageService.createProxy(vertx, PiveauMessageService.ADDRESS);
     }
 
-    public void unregisterSingleDataset(URI uri, String issuerConnector, Resource resource, Handler<AsyncResult<String>> readyHandler) {
+    public void unregisterSingleDataset(URI uri, String issuerConnector, Resource resource, Handler<AsyncResult<HttpEntity>> readyHandler) {
         catalogueManager.getCatalogueByExternalId(issuerConnector, next -> {
             if (next.succeeded()) {
                 String cataloguePiveauId = next.result().getString("internal_id");
@@ -95,7 +96,7 @@ public class UnregisterController {
     }
 
 
-    public void unregister(URI uri, Connector connector, Handler<AsyncResult<String>> readyHandler) {
+    public void unregister(URI uri, Connector connector, Handler<AsyncResult<HttpEntity>> readyHandler) {
         java.util.Map<String, Promise> datasetDeletePromises = new HashMap<>();
 
         catalogueManager.getCatalogueByExternalId(connector.getId().toString(), catalogueIdResult -> {
@@ -152,7 +153,7 @@ public class UnregisterController {
         });
     }
 
-    private void handleCatalogue(URI uri, java.util.List<Promise> datasetDeletePromises, String catalogueIdResult, Handler<AsyncResult<String>> readyHandler) {
+    private void handleCatalogue(URI uri, java.util.List<Promise> datasetDeletePromises, String catalogueIdResult, Handler<AsyncResult<HttpEntity>> readyHandler) {
         CompositeFuture.all(datasetDeletePromises.stream().map(Promise::future).collect(Collectors.toList())).setHandler(reply -> {
             if (reply.succeeded()) {
                 deleteCatalogueExternal(reply, catalogueIdResult, externalCatalogueDeleteReply ->
@@ -193,7 +194,7 @@ public class UnregisterController {
         }
     }
 
-    private void deleteCatalogueInternal(URI uri, AsyncResult<Void> reply, String catalogueInternalId, Handler<AsyncResult<String>> readyHandler) {
+    private void deleteCatalogueInternal(URI uri, AsyncResult<Void> reply, String catalogueInternalId, Handler<AsyncResult<HttpEntity>> readyHandler) {
         if (reply.succeeded()) {
             catalogueManager.deleteByInternalId(catalogueInternalId, deleteCatalogueReply -> {
                 if (deleteCatalogueReply.succeeded()) {

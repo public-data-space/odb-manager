@@ -12,6 +12,7 @@ import de.fraunhofer.iais.eis.ids.jsonld.Serializer;
 import io.vertx.core.*;
 import io.vertx.core.logging.Logger;
 import io.vertx.core.logging.LoggerFactory;
+import org.apache.http.HttpEntity;
 
 import java.io.IOException;
 import java.net.URI;
@@ -39,7 +40,7 @@ public class RegisterController {
         this.dcatTransformerService = DCATTransformerService.createProxy(vertx, DCATTransformerService.ADDRESS);
     }
 
-    public void registerResourceAvailableMessage(URI uri, String issuerConnector, Resource resource, Handler<AsyncResult<String>> readyHandle) {
+    public void registerResourceAvailableMessage(URI uri, String issuerConnector, Resource resource, Handler<AsyncResult<HttpEntity>> readyHandler) {
         catalogueManager.getCatalogueByExternalId(issuerConnector, next -> {
             if (next.succeeded()) {
                 String cataloguePiveauId = next.result().getString("internal_id");
@@ -48,21 +49,21 @@ public class RegisterController {
                     datasetManager.findByExternalId(resource.getId().toString(), datasetIdreply -> {
                         if (datasetIdreply.succeeded()) {
                             LOGGER.info("Dataset " + resource.getId().toString() + " is already registered in the internal database. Rejecting ResrouceAvailableMessage.");
-                            idsService.handleRejectionMessage(RejectionReason.BAD_PARAMETERS, uri, readyHandle);
+                            idsService.handleRejectionMessage(RejectionReason.BAD_PARAMETERS, uri, readyHandler);
                         } else {
                             java.util.Map<String, Promise> dataassetCreatePromises = new HashMap<>();
-                            saveDatasetInDatabase(uri,cataloguePiveauId,resource,dataassetCreatePromises,readyHandle);
-                            composeAllPromises(uri,readyHandle,dataassetCreatePromises);
+                            saveDatasetInDatabase(uri,cataloguePiveauId,resource,dataassetCreatePromises,readyHandler);
+                            composeAllPromises(uri,readyHandler,dataassetCreatePromises);
                         }
                     });
                 }
             } else {
                 LOGGER.info("Katalog with id " + issuerConnector + " not found ");
-                idsService.handleRejectionMessage(RejectionReason.BAD_PARAMETERS, uri, readyHandle);
+                idsService.handleRejectionMessage(RejectionReason.BAD_PARAMETERS, uri, readyHandler);
             }
         });
     }
-    public void register(URI uri, Connector connector, Handler<AsyncResult<String>> readyHandler) {
+    public void register(URI uri, Connector connector, Handler<AsyncResult<HttpEntity>> readyHandler) {
         String catalogueId = UUID.randomUUID().toString();
         catalogueManager.getCatalogueByExternalId(connector.getId().toString(),next->{
             if (next.succeeded()) {
@@ -113,7 +114,7 @@ public class RegisterController {
             next.handle(Future.failedFuture(reply.cause()));
         }
     }
-    private void saveDatasetInDatabase(URI uri, String catalogueId, Resource resource, java.util.Map<String, Promise> dataassetCreatePromises, Handler<AsyncResult<String>> readyHandler) {
+    private void saveDatasetInDatabase(URI uri, String catalogueId, Resource resource, java.util.Map<String, Promise> dataassetCreatePromises, Handler<AsyncResult<HttpEntity>> readyHandler) {
         StaticEndpoint staticEndpoint = (StaticEndpoint) resource.getResourceEndpoint().get(0);
         String date = staticEndpoint.getEndpointArtifact().getCreationDate().toString();
         try {
@@ -145,7 +146,7 @@ public class RegisterController {
         }
     }
 
-    private void composeAllPromises(URI uri, Handler<AsyncResult<String>> readyHandler, java.util.Map<String, Promise> dataassetCreatePromises) {
+    private void composeAllPromises(URI uri, Handler<AsyncResult<HttpEntity>> readyHandler, java.util.Map<String, Promise> dataassetCreatePromises) {
         CompositeFuture.all(dataassetCreatePromises.values().stream().map(Promise::future).collect(Collectors.toList())).setHandler(ac -> {
             if (ac.succeeded()) {
                 idsService.handleSucceededMessage(uri, readyHandler);
@@ -156,7 +157,7 @@ public class RegisterController {
         });
     }
 
-    private void handleDatasetCreation( AsyncResult<Void> internalCatalogueCreationReply, URI uri, Connector connector, String catalogueId, Handler<AsyncResult<String>> readyHandler) {
+    private void handleDatasetCreation( AsyncResult<Void> internalCatalogueCreationReply, URI uri, Connector connector, String catalogueId, Handler<AsyncResult<HttpEntity>> readyHandler) {
         if (internalCatalogueCreationReply.succeeded()) {
                     java.util.Map<String, Promise> dataassetCreatePromises = new HashMap<>();
                     if (connector.getCatalog() != null) {

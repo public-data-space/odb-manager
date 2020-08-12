@@ -13,6 +13,7 @@ import io.vertx.core.*;
 import io.vertx.core.json.JsonObject;
 import io.vertx.core.logging.Logger;
 import io.vertx.core.logging.LoggerFactory;
+import org.apache.http.HttpEntity;
 
 import java.io.IOException;
 import java.net.URI;
@@ -41,7 +42,7 @@ public class UpdateController {
         this.piveauMessageService = PiveauMessageService.createProxy(vertx, PiveauMessageService.ADDRESS);
         this.dcatTransformerService = DCATTransformerService.createProxy(vertx, DCATTransformerService.ADDRESS);
     }
-    public void updateSingleDataset(URI uri, String issuerConnector, Resource resource, Handler<AsyncResult<String>> readyHandle) {
+    public void updateSingleDataset(URI uri, String issuerConnector, Resource resource, Handler<AsyncResult<HttpEntity>> readyHandler) {
         catalogueManager.getCatalogueByExternalId(issuerConnector, next -> {
             if (next.succeeded()) {
                 String cataloguePiveauId = next.result().getString("internal_id");
@@ -63,35 +64,35 @@ public class UpdateController {
                                                                 LOGGER.info("Deletion of dataset graph failed.");
                                                             }
                                                         });
-                                                        datasetGraphCreation(resource,readyHandle);
+                                                        datasetGraphCreation(resource,readyHandler);
                                                         resolveDatasetIdForUpdate(resource.getId().toString(), reply -> {
                                                             piveauMessageService.createDataSet(datasetTransformResult.result(), reply.result(), cataloguePiveauId, datasetReply -> {
                                                                 if (datasetReply.succeeded()) {
-                                                                    idsService.handleSucceededMessage(uri, readyHandle);
+                                                                    idsService.handleSucceededMessage(uri, readyHandler);
                                                                 } else {
                                                                     LOGGER.error(datasetReply.cause());
-                                                                    idsService.handleRejectionMessage(RejectionReason.BAD_PARAMETERS, uri, readyHandle);
+                                                                    idsService.handleRejectionMessage(RejectionReason.BAD_PARAMETERS, uri, readyHandler);
                                                                 }
                                                             });
                                                         });
                                                     } else {
-                                                        idsService.handleRejectionMessage(RejectionReason.BAD_PARAMETERS, uri, readyHandle);
+                                                        idsService.handleRejectionMessage(RejectionReason.BAD_PARAMETERS, uri, readyHandler);
                                                     }
                                                 } else {
                                                     LOGGER.info("Dataset with id " + resource.getId().toString() + " not found ");
-                                                    idsService.handleRejectionMessage(RejectionReason.BAD_PARAMETERS, uri, readyHandle);
+                                                    idsService.handleRejectionMessage(RejectionReason.BAD_PARAMETERS, uri, readyHandler);
                                                 }
                                             });
                                         } else {
                                             String internalId = UUID.randomUUID().toString();
-                                            datasetGraphCreation(resource,readyHandle);
+                                            datasetGraphCreation(resource,readyHandler);
                                             piveauMessageService.createDataSet(datasetTransformResult.result(), internalId, cataloguePiveauId, datasetReply -> {
                                                 if (datasetReply.succeeded()) {
                                                     datasetManager.create(resource.getId().toString(), internalId, datasetPersistenceReply2 -> {
                                                         if (datasetPersistenceReply2.succeeded()) {
-                                                            idsService.handleSucceededMessage(uri, readyHandle);
+                                                            idsService.handleSucceededMessage(uri, readyHandler);
                                                         } else {
-                                                            idsService.handleRejectionMessage(RejectionReason.INTERNAL_RECIPIENT_ERROR, uri, readyHandle);
+                                                            idsService.handleRejectionMessage(RejectionReason.INTERNAL_RECIPIENT_ERROR, uri, readyHandler);
                                                         }
                                                     });
                                                 } else {
@@ -101,25 +102,25 @@ public class UpdateController {
                                         }
                                     } else {
                                         LOGGER.error(datasetTransformResult.cause());
-                                        idsService.handleRejectionMessage(RejectionReason.INTERNAL_RECIPIENT_ERROR, uri, readyHandle);
+                                        idsService.handleRejectionMessage(RejectionReason.INTERNAL_RECIPIENT_ERROR, uri, readyHandler);
                                     }
                                 });
                             } catch (IOException e) {
-                                readyHandle.handle(Future.failedFuture(e));
+                                readyHandler.handle(Future.failedFuture(e));
                             }
                         } else {
-                            idsService.handleRejectionMessage(RejectionReason.INTERNAL_RECIPIENT_ERROR, uri, readyHandle);
+                            idsService.handleRejectionMessage(RejectionReason.INTERNAL_RECIPIENT_ERROR, uri, readyHandler);
                         }
                     });
                 }
             } else {
                 LOGGER.info("Katalog with id " + issuerConnector + " not found ");
-                idsService.handleRejectionMessage(RejectionReason.BAD_PARAMETERS, uri, readyHandle);
+                idsService.handleRejectionMessage(RejectionReason.BAD_PARAMETERS, uri, readyHandler);
             }
         });
     }
 
-    public void update(URI uri, Connector connector, Handler<AsyncResult<String>> readyHandler) {
+    public void update(URI uri, Connector connector, Handler<AsyncResult<HttpEntity>> readyHandler) {
 
         catalogueManager.getCatalogueByExternalId(connector.getId().toString(), catalogueIdResult -> {
             if (catalogueIdResult.succeeded()) {
@@ -162,7 +163,7 @@ public class UpdateController {
             next.handle(Future.failedFuture(catalogue.cause()));
         }
     }
-    private void datasetGraphCreation(Resource resource,  Handler<AsyncResult<String>> readyHandler){
+    private void datasetGraphCreation(Resource resource,  Handler<AsyncResult<HttpEntity>> readyHandler){
         try {
             graphManager.create(resource.getId().toString(),serializer.serialize(resource),r->{
                 if(r.failed()){
@@ -174,7 +175,7 @@ public class UpdateController {
             readyHandler.handle(Future.failedFuture(e));
         }
     }
-    private void updateDatasets(Connector connector, URI uri, String catalogueId, Handler<AsyncResult<String>> readyHandler) {
+    private void updateDatasets(Connector connector, URI uri, String catalogueId, Handler<AsyncResult<HttpEntity>> readyHandler) {
         datasetManager.dataAssetIdsOfCatalogue(catalogueId, piveauDatasetIds ->
                 resolvePiveauIds(piveauDatasetIds, result -> {
             if (result.succeeded()) {

@@ -20,6 +20,7 @@ import io.vertx.config.ConfigRetriever;
 import io.vertx.config.ConfigRetrieverOptions;
 import io.vertx.config.ConfigStoreOptions;
 import io.vertx.core.*;
+import io.vertx.core.buffer.Buffer;
 import io.vertx.core.http.HttpMethod;
 import io.vertx.core.http.HttpServer;
 import io.vertx.core.http.HttpServerResponse;
@@ -29,12 +30,17 @@ import io.vertx.ext.web.Router;
 import io.vertx.ext.web.client.WebClient;
 import io.vertx.ext.web.handler.BodyHandler;
 import io.vertx.ext.web.handler.CorsHandler;
+import org.apache.commons.io.IOUtils;
+import org.apache.http.Header;
+import org.apache.http.HttpEntity;
 import org.apache.http.entity.ContentType;
 
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.net.URI;
 import java.util.Arrays;
 import java.util.HashSet;
+import java.util.Optional;
 import java.util.Set;
 
 public class MainVerticle extends AbstractVerticle {
@@ -144,10 +150,10 @@ public class MainVerticle extends AbstractVerticle {
 
         router.route().handler(CorsHandler.create("*").allowedHeaders(allowedHeaders).allowedMethods(allowedMethods));
         router.route().handler(BodyHandler.create());
-        router.post("/infrastructure").handler(routingContext -> getInfrastructure(routingContext.getBodyAsString(),
-                reply -> reply(reply, routingContext.response())));
-        router.post("/data").handler(routingContext -> getData(routingContext.getBodyAsString(),
-                reply -> reply(reply, routingContext.response())));
+        router.post("/infrastructure").handler(routingContext -> getInfrastructure(IDSMessageParser.parse(routingContext.request().formAttributes()),
+                reply -> replyMessage(reply, routingContext.response())));
+        router.post("/data").handler(routingContext -> getData(IDSMessageParser.parse(routingContext.request().formAttributes()),
+                reply -> replyMessage(reply, routingContext.response())));
         router.route("/about").handler(routingContext -> about(reply -> reply(reply, routingContext.response())));
         router.route("/").handler(routingContext -> about(reply -> reply(reply, routingContext.response())));
         LOGGER.info("Starting odb-manager ");
@@ -155,8 +161,8 @@ public class MainVerticle extends AbstractVerticle {
         LOGGER.info("odb-manager deployed on port " + this.servicePort);
     }
 
-    private void getData(String input, Handler<AsyncResult<String>> readyHandler) {
-        IDSMessage idsMessage = IDSMessageParser.parse(input).orElse(new IDSMessage(null, null));
+    private void getData(Optional<IDSMessage> input, Handler<AsyncResult<HttpEntity>> readyHandler) {
+        IDSMessage idsMessage = input.orElse(new IDSMessage(null, null));
 
         if (!idsMessage.getHeader().isPresent()) {
             try {
@@ -194,8 +200,8 @@ public class MainVerticle extends AbstractVerticle {
         }
     }
 
-    private void getInfrastructure(String input, Handler<AsyncResult<String>> readyHandler) {
-        IDSMessage idsMessage = IDSMessageParser.parse(input).orElse(new IDSMessage(null, null));
+    private void getInfrastructure(Optional<IDSMessage> input, Handler<AsyncResult<HttpEntity>> readyHandler) {
+        IDSMessage idsMessage = input.orElse(new IDSMessage(null, null));
 
         if (!idsMessage.getHeader().isPresent()) {
             try {
@@ -300,7 +306,26 @@ public class MainVerticle extends AbstractVerticle {
                 response.end(entity);
             }
         } else {
-            response.setStatusCode(404).end();
+            response.setStatusCode(500).end();
+        }
+    }
+
+    private void replyMessage(AsyncResult<HttpEntity> result, HttpServerResponse response) {
+        if (result.succeeded() && result.result() != null) {
+            if (!response.headWritten()) {
+                try(ByteArrayOutputStream baos = new ByteArrayOutputStream()){
+                    Header contentTypeHeader =  result.result().getContentType();
+                    IOUtils.copy(result.result().getContent(), baos);
+                    response.putHeader(contentTypeHeader.getName(), contentTypeHeader.getValue());
+                    response.end(Buffer.buffer(baos.toByteArray()));
+                } catch (IOException e) {
+                    LOGGER.error(e);
+                    response.setStatusCode(500);
+                    response.end();
+                }
+            }
+        } else {
+            response.setStatusCode(500).end();
         }
     }
 

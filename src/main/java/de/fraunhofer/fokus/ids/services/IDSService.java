@@ -14,6 +14,7 @@ import io.vertx.core.buffer.Buffer;
 import io.vertx.core.json.JsonObject;
 import io.vertx.core.logging.Logger;
 import io.vertx.core.logging.LoggerFactory;
+import org.apache.http.HttpEntity;
 import org.apache.http.entity.ContentType;
 import org.apache.http.entity.mime.MultipartEntityBuilder;
 import org.apache.http.entity.mime.content.ContentBody;
@@ -178,7 +179,7 @@ public class IDSService {
         return null;
     }
 
-    public void getSelfDescriptionResponse(URI uri,DescriptionRequestMessage header, Handler<AsyncResult<String>> resultHandler) {
+    public void getSelfDescriptionResponse(URI uri,DescriptionRequestMessage header, Handler<AsyncResult<HttpEntity>> resultHandler) {
         getConfiguration( reply -> {
             if (reply.succeeded()) {
                 createSelfDescriptionResponse(reply.result(), uri, selfDescriptionReply -> {
@@ -266,62 +267,57 @@ public class IDSService {
         });
     }
 
-    public void createMultiPartMessage(URI uri, Object headerObject, Object payloadObject, Handler<AsyncResult<String>> resultHandler) {
+    public void createMultiPartMessage(URI uri, Object headerObject, Object payloadObject, Handler<AsyncResult<HttpEntity>> resultHandler) {
         try {
             ContentBody contentBody = new StringBody(serializer.serialize(headerObject), ContentType.create("application/json"));
             ContentBody payload = new StringBody(serializer.serialize(payloadObject), ContentType.create("application/json"));
 
             MultipartEntityBuilder multipartEntityBuilder = MultipartEntityBuilder.create()
-                    .setBoundary("msgpart")
                     .setCharset(StandardCharsets.UTF_8)
-                    .setContentType(ContentType.APPLICATION_JSON)
+                    .setContentType(ContentType.MULTIPART_FORM_DATA)
                     .addPart("header", contentBody)
                     .addPart("payload", payload);
 
             ByteArrayOutputStream out = new ByteArrayOutputStream();
-            multipartEntityBuilder.build().writeTo(out);
-            resultHandler.handle(Future.succeededFuture(out.toString()));
+            resultHandler.handle(Future.succeededFuture(multipartEntityBuilder.build()));
         } catch (IOException e) {
             LOGGER.error(e);
             handleRejectionMessage(RejectionReason.INTERNAL_RECIPIENT_ERROR,uri,resultHandler);
         }
     }
 
-    private Buffer createMultipartMessage(Message message) {
+    private HttpEntity createMultipartMessage(Message message) {
         try {
             ContentBody cb = new StringBody(serializer.serialize(message), org.apache.http.entity.ContentType.create("application/json"));
 
             MultipartEntityBuilder multipartEntityBuilder = MultipartEntityBuilder.create()
-                    .setBoundary("msgpart")
                     .setCharset(StandardCharsets.UTF_8)
-                    .setContentType(ContentType.APPLICATION_JSON)
+                    .setContentType(ContentType.MULTIPART_FORM_DATA)
                     .addPart("header", cb);
 
-            ByteArrayOutputStream out = new ByteArrayOutputStream();
-            multipartEntityBuilder.build().writeTo(out);
-            return Buffer.buffer().appendString(out.toString());
+            return multipartEntityBuilder.build();
         } catch (IOException e) {
             LOGGER.error(e);
         }
         return null;
     }
 
-    public void handleSucceededMessage(URI uri, Handler<AsyncResult<String>> readyHandler) {
+    public void handleSucceededMessage(URI uri, Handler<AsyncResult<HttpEntity>> readyHandler) {
         createSucceededMessage(uri, messageProcessedNotificationAsyncResult -> {
             if (messageProcessedNotificationAsyncResult.succeeded()) {
-                Buffer buffer = createMultipartMessage(messageProcessedNotificationAsyncResult.result());
-                readyHandler.handle(Future.succeededFuture(buffer.toString()));
+                HttpEntity buffer = createMultipartMessage(messageProcessedNotificationAsyncResult.result());
+                readyHandler.handle(Future.succeededFuture(buffer));
             } else {
                 readyHandler.handle(Future.failedFuture(messageProcessedNotificationAsyncResult.cause()));
             }
         });
     }
 
-    public void handleRejectionMessage(RejectionReason rejectionReason, URI uri, Handler<AsyncResult<String>> readyHandler) {
+    public void handleRejectionMessage(RejectionReason rejectionReason, URI uri, Handler<AsyncResult<HttpEntity>> readyHandler) {
         createRejectionMessage(rejectionReason, uri, rejectionMessageAsyncResult -> {
             if (rejectionMessageAsyncResult.succeeded()) {
-                Buffer buffer = createMultipartMessage(rejectionMessageAsyncResult.result());
-                readyHandler.handle(Future.succeededFuture(buffer.toString()));
+                HttpEntity buffer =  createMultipartMessage(rejectionMessageAsyncResult.result());
+                readyHandler.handle(Future.succeededFuture(buffer));
             } else {
                 readyHandler.handle(Future.failedFuture(rejectionMessageAsyncResult.cause()));
             }

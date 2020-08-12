@@ -8,6 +8,7 @@ import io.vertx.core.Handler;
 import io.vertx.core.Vertx;
 import io.vertx.core.logging.Logger;
 import io.vertx.core.logging.LoggerFactory;
+import org.apache.http.HttpEntity;
 
 import java.net.URI;
 
@@ -22,7 +23,7 @@ public class QueryMessageController {
         this.idsService = new IDSService(vertx,tsConnector);
     }
 
-    public void queryMessage(String query , URI correlationMessageURI, Handler<AsyncResult<String>> resultHandler) {
+    public void queryMessage(String query , URI correlationMessageURI, Handler<AsyncResult<HttpEntity>> resultHandler) {
         tsConnector.query(query,"application/json",httpResponseAsyncResult -> {
             if (httpResponseAsyncResult.succeeded()) {
                 LOGGER.info("Query Message succeeded");
