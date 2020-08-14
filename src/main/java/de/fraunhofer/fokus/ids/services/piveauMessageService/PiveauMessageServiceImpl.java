@@ -79,7 +79,11 @@ public class PiveauMessageServiceImpl implements PiveauMessageService {
                 .putHeader("Accept", "application/json")
                 .send(ar -> {
                     if (ar.succeeded()) {
-                        resultHandler.handle(Future.succeededFuture(ar.result().bodyAsJsonObject()));
+                        JsonObject resultObject = new JsonObject();
+                        try {
+                            resultObject = ar.result().bodyAsJsonObject();
+                        } catch (Exception e){}
+                        resultHandler.handle(Future.succeededFuture(resultObject));
                     } else {
                         LOGGER.error(ar.cause());
                         resultHandler.handle(Future.failedFuture(ar.cause()));
@@ -123,7 +127,7 @@ public class PiveauMessageServiceImpl implements PiveauMessageService {
     public PiveauMessageService getAllDatasetsOfCatalogue(String catalogueId , Handler<AsyncResult<JsonObject>> readyHandler) {
         get(piveauPort,piveauHost,"/datasets?catalogue="+catalogueId, jsonObjectAsyncResult -> {
             if(jsonObjectAsyncResult.succeeded()) {
-                readyHandler.handle(Future.succeededFuture(jsonObjectAsyncResult.result()));   }
+                readyHandler.handle(Future.succeededFuture(jsonObjectAsyncResult.result() != null ? jsonObjectAsyncResult.result() : new JsonObject()));   }
             else {
                 LOGGER.error(jsonObjectAsyncResult.cause());
                 readyHandler.handle(Future.failedFuture(jsonObjectAsyncResult.cause()));

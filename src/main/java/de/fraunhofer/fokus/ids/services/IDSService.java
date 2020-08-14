@@ -278,7 +278,6 @@ public class IDSService {
                     .addPart("header", contentBody)
                     .addPart("payload", payload);
 
-            ByteArrayOutputStream out = new ByteArrayOutputStream();
             resultHandler.handle(Future.succeededFuture(multipartEntityBuilder.build()));
         } catch (IOException e) {
             LOGGER.error(e);
