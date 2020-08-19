@@ -14,6 +14,9 @@ ids-open-data-broker
 * ConnectorUnavailableMessage
 * ConnectorUpdateMessage
 * DescriptionRequestMessage
+* ResourceUnavailableMessage
+* ResourceAvailableMessage
+* ResourceUpdateMessage
 #### Data messages
 * QueryMessage
 
@@ -22,6 +25,7 @@ ids-open-data-broker
 * docker
 * docker-compose 3.5 or higher
 * maven
+* DAPS certificates
 
 ## Building the Component
 * run ``mvn clean package``
